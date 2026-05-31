@@ -76,7 +76,7 @@ except Exception as e:
     st.error("Error de conexión con los Secrets de Supabase. Verifica la configuración.")
     st.stop()
 
-# 3. Funciones core de lectura y escritura en la nube (Corregidas y Blindadas)
+# 3. Funciones core de lectura y escritura en la nube (Sincronización Directa por Filtro)
 def cargar_datos_db():
     try:
         response = supabase.table("erp_balance").select("*").eq("nombre_escenario", "Principal").execute()
@@ -88,12 +88,12 @@ def cargar_datos_db():
 
 def guardar_datos_db(datos_nuevos):
     try:
-        # Copiamos el diccionario e inyectamos el nombre de columna correcto en español
+        # Copiamos el diccionario e inyectamos el nombre de escenario correcto
         payload = datos_nuevos.copy()
         payload["nombre_escenario"] = "Principal"
         
-        # El comando upsert actualiza si ya existe la fila, o la inserta si se borrase
-        supabase.table("erp_balance").upsert(payload, on_conflict="nombre_escenario").execute()
+        # Usamos update directo filtrando por el nombre del escenario existente para evitar el conflicto 42P10
+        supabase.table("erp_balance").update(payload).eq("nombre_escenario", "Principal").execute()
         st.toast("¡Copia de seguridad guardada en Supabase Cloud! 🚀", icon="💾")
     except Exception as e:
         st.error(f"Error al sincronizar con la nube: {e}")
