@@ -3,11 +3,12 @@ import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
+from supabase import create_client, Client
 
-# Configuración de la página web
+# 1. Configuración de la página web (Ancho completo e interfaz fluida)
 st.set_page_config(page_title="Mi ERP Financiero Pro", page_icon="📊", layout="wide")
 
-# --- ESTILOS PERSONALIZADOS ---
+# Estilos personalizados e inyección CSS para optimización en móviles
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
@@ -32,26 +33,75 @@ st.markdown("""
         color: #ffffff;
         white-space: nowrap;
     }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] { 
+        padding: 8px 16px; 
+        background-color: #161a24; 
+        border-radius: 8px 8px 0 0;
+        color: #9ca3af;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📊 Mi Panel de Control Contable & Proyección Global")
+# 2. Conexión segura con la base de datos Supabase
+@st.cache_resource
+def init_supabase() -> Client:
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    return create_client(url, key)
+
+try:
+    supabase = init_supabase()
+except Exception as e:
+    st.error("Error de conexión con los Secrets de Supabase. Verifica la configuración.")
+    st.stop()
+
+# 3. Funciones core de lectura y escritura en la nube
+def cargar_datos_db():
+    try:
+        response = supabase.table("erp_balance").select("*").eq("nombre_escenario", "Principal").execute()
+        if response.data:
+            return response.data[0]
+    except:
+        pass
+    return None
+
+def guardar_datos_db(datos_nuevos):
+    try:
+        supabase.table("erp_balance").update(datos_nuevos).eq("nombre_escenario", "Principal").execute()
+        st.toast("¡Copia de seguridad guardada en Supabase Cloud! 🚀", icon="💾")
+    except Exception as e:
+        st.error(f"Error al sincronizar con la nube: {e}")
+
+# Inicialización única desde la Base de Datos al arrancar
+if "db_data" not in st.session_state:
+    st.session_state.db_data = cargar_datos_db()
+
+db = st.session_state.db_data
+
+# Resguardo local si la base de datos está vacía por primera vez
+if not db:
+    db = {
+        "salario_base": 3200, "liquidez": 15450, 
+        "unidades_voo": 5, "unidades_vale": 20, "unidades_pbr": 15,
+        "valor_inmuebles": 250000, "otros_activos": 24500
+    }
 
 # =====================================================================
-# --- SISTEMA DE ALMACENAMIENTO TEMPORAL (SESSION STATE) ---
+# --- SISTEMA DE ALMACENAMIENTO TEMPORAL (SESSION STATE INTERNO) ---
 # =====================================================================
 if "efectivo_divisas" not in st.session_state:
-    st.session_state.efectivo_divisas = {"EUR": 15450.0}
+    st.session_state.efectivo_divisas = {"EUR": float(db.get("liquidez", 15450))}
 
 if "cartera_usuario" not in st.session_state:
     st.session_state.cartera_usuario = {
-        "PBR": {"unidades": 15.0, "precio_compra": 12.50},
-        "VALE": {"unidades": 20.0, "precio_compra": 11.20},
-        "VOO": {"unidades": 5.0, "precio_compra": 420.00}
+        "PBR": {"unidades": float(db.get("unidades_pbr", 15)), "precio_compra": 12.50},
+        "VALE": {"unidades": float(db.get("unidades_vale", 20)), "precio_compra": 11.20},
+        "VOO": {"unidades": float(db.get("unidades_voo", 5)), "precio_compra": 420.00}
     }
 
 if "fincas_usuario" not in st.session_state:
-    st.session_state.fincas_usuario = [{"Nombre": "Ático Alicante Centro", "Catastro": "9872023VH5797S0001WX", "Valor": 250000.0}]
+    st.session_state.fincas_usuario = [{"Nombre": "Ático Alicante Centro", "Catastro": "9872023VH5797S0001WX", "Valor": float(db.get("valor_inmuebles", 250000))}]
 
 if "pensiones_usuario" not in st.session_state:
     st.session_state.pensiones_usuario = [
@@ -60,22 +110,15 @@ if "pensiones_usuario" not in st.session_state:
     ]
 
 if "otros_activos_usuario" not in st.session_state:
-    st.session_state.otros_activos_usuario = [{"Nombre": "Vehículo Familiar", "Valor": 24500.0}]
+    st.session_state.otros_activos_usuario = [{"Nombre": "Vehículo Familiar", "Valor": float(db.get("otros_activos", 24500))}]
 
 if "deudas_usuario" not in st.session_state:
     st.session_state.deudas_usuario = [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}]
 
-if "ingresos_extra" not in st.session_state:
-    st.session_state.ingresos_extra = [
-        {"Concepto": "Salario Neto Base", "Valor": 3200.0}
-    ]
-if "gastos_extra" not in st.session_state:
-    st.session_state.gastos_extra = [
-        {"Concepto": "Gastos de Vida", "Valor": 1800.0}
-    ]
-
 if "plusvalia_bolsa_real" not in st.session_state:
     st.session_state.plusvalia_bolsa_real = 0.0
+
+st.title("📊 Mi Panel de Control Contable & Proyección Global")
 
 # --- PESTAÑAS CONTABLES ---
 tab_balance, tab_proyeccion, tab_fiscalidad = st.tabs([
@@ -248,8 +291,23 @@ with tab_balance:
         patrimonio_neto = activo_total - pasivo_total
         pct_cash = (categoria_cash / activo_total * 100) if activo_total > 0 else 0.0
 
-        if st.button("🔄 Recalcular Todo el Balance", type="primary"):
+        # BOTÓN MAESTRO DE COPÌA DE SEGURIDAD CLOUD
+        c_rec, c_sav = st.columns(2)
+        if c_rec.button("🔄 Recalcular Todo el Balance", type="primary", use_container_width=True):
             st.rerun()
+        
+        if c_sav.button("💾 Guardar Datos en la Nube", type="secondary", use_container_width=True):
+            payload = {
+                "salario_base": float(db.get("salario_base", 3200)),
+                "liquidez": float(categoria_cash),
+                "unidades_voo": float(st.session_state.cartera_usuario.get("VOO", {}).get("unidades", 0)),
+                "unidades_vale": float(st.session_state.cartera_usuario.get("VALE", {}).get("unidades", 0)),
+                "unidades_pbr": float(st.session_state.cartera_usuario.get("PBR", {}).get("unidades", 0)),
+                "valor_inmuebles": float(categoria_inmobiliario),
+                "otros_activos": float(categoria_otros)
+            }
+            guardar_datos_db(payload)
+            st.session_state.db_data = payload
             
         c1, c2, c3, c4 = st.columns(4)
         c1.markdown(f"<div class='tarjeta-metrica'><div class='metrica-titulo'>🟢 Activo Total</div><div class='metrica-valor'>{int(activo_total):,} €</div></div>", unsafe_allow_html=True)
@@ -263,7 +321,6 @@ with tab_balance:
             fig.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, height=240, margin=dict(t=10, b=10, l=10, r=10))
             st.plotly_chart(fig, use_container_width=True)
 
-        # --- RESTAURADO: DETALLES DE CAPAS DETALLADAS ABAJO DE LA TAB 1 ---
         st.divider()
         col_act_d, col_pas_d = st.columns(2)
         with col_act_d:
@@ -360,13 +417,12 @@ with tab_proyeccion:
                     total_anual_deducible_pensiones_usuario += (aport_user * 12)
 
         st.subheader("🟢 Otros Ingresos & Gastos Base")
-        salario_neto_base = st.number_input("Salario Neto Base Mensual (€)", min_value=0.0, value=3200.0, step=100.0)
+        salario_neto_base = st.number_input("Salario Neto Base Mensual (€)", min_value=0.0, value=float(db.get("salario_base", 3200)), step=100.0)
         gastos_vida_base = st.number_input("Gastos de Vida Base Mensuales (€)", min_value=0.0, value=1800.0, step=100.0)
         
         st.divider()
         ahorro_mensual_inicial = (salario_neto_base + total_rentas_pasivas_inmo + total_dividendos_mensuales_bolsa) - gastos_vida_base
         
-        # Fila de métricas iniciales
         tasa_ahorro_i = (ahorro_mensual_inicial / (salario_neto_base + total_rentas_pasivas_inmo + total_dividendos_mensuales_bolsa) * 100) if (salario_neto_base + total_rentas_pasivas_inmo + total_dividendos_mensuales_bolsa) > 0 else 0.0
         roi_e_i = (ahorro_mensual_inicial * 12 / activo_total * 100) if activo_total > 0 else 0.0
         roe_e_i = (ahorro_mensual_inicial * 12 / patrimonio_neto * 100) if patrimonio_neto > 0 else 0.0
@@ -395,7 +451,6 @@ with tab_proyeccion:
         interes_cash = c_p4.slider("💰 Interés Cash (%)", 0.0, 6.0, 3.5, step=0.1)
         pct_inflacion = c_p5.slider("🔥 Inflación (%)", 0.0, 8.0, 2.5, step=0.1)
 
-        # --- EDICIÓN DE LA "LOCURA DE EVOLUCIÓN": TABLA DINÁMICA ANUAL ---
         with st.expander("🎛️ CONFIGURAR MATRIX EVOLUTIVA ANUAL (EDITAR VALORES POR AÑO)", expanded=True):
             st.caption("Ajusta los flujos estimados para cada año futuro. Puedes simular subidas de salario, caídas de alquileres o compras indexadas.")
             anios_index = [f"Año {i}" for i in range(1, años_sim + 1)]
@@ -420,9 +475,7 @@ with tab_proyeccion:
             lista_años_vacios = c_str2.multiselect("¿Años con vacío?", list(range(1, años_sim + 1)), default=[2]) if activar_vacio else []
             meses_vacio = c_str2.slider("Meses vacíos en esos años", 1, 12, 6) if activar_vacio else 6
 
-        # =====================================================================
-        # BUCLE DE CÓMPUTO CIENTÍFICO FINANCIERO (ANUALIZADO PARA FLUJOS)
-        # =====================================================================
+        # --- BUCLE DE CÓMPUTO CIENTÍFICO FINANCIERO ---
         v_cash = float(categoria_cash)
         v_bolsa = float(total_bolsa)
         v_pensiones = float(categoria_pensiones)
@@ -431,10 +484,7 @@ with tab_proyeccion:
         
         hist_anios = [str(pd.Timestamp.now().year + i) for i in range(años_sim)]
         
-        # Vectores patrimoniales
         h_cash, h_bolsa, h_pensiones, h_inmuebles, h_otros, h_deflactado, h_nominal_total = [], [], [], [], [], [], []
-        
-        # Vectores de Cash-Flow Real Anualizado
         h_cf_ahorro_metalico, h_cf_dividendos, h_cf_rentas_inmo, h_cf_interes_acum, h_cf_gastos = [], [], [], [], []
 
         for idx, anio_label in enumerate(anios_index):
@@ -449,28 +499,22 @@ with tab_proyeccion:
             if activar_vacio and ((idx + 1) in lista_años_vacios):
                 rentas_recibidas *= (1.0 - (meses_vacio / 12.0))
             
-            # Cálculo de los intereses del dinero líquido retenido del año anterior
             intereses_generados_este_anio = v_cash * (interes_cash / 100)
-            
-            # Ingresos agregados netos y ahorro neto disponible antes de inyecciones estratégicas
             ingresos_totales_anio = salario_recibido + rentas_recibidas + dividendos_recibidos + intereses_generados_este_anio
             excedente_de_caja_anio = ingresos_totales_anio - gastos_soportados - bolsa_extra - inmo_extra
             
             factor_deflactor = (1 + (pct_inflacion / 100)) ** idx
             
-            # Guardamos los flujos deflactados en partidas separadas para las barras stacked
             h_cf_ahorro_metalico.append(max(0.0, salario_recibido) / factor_deflactor)
             h_cf_dividendos.append(dividendos_recibidos / factor_deflactor)
             h_cf_rentas_inmo.append(max(0.0, rentas_recibidas) / factor_deflactor)
             h_cf_interes_acum.append(intereses_generados_este_anio / factor_deflactor)
             h_cf_gastos.append(gastos_soportados / factor_deflactor)
             
-            # RESTAURADO: Inyecciones de capital manuales impactan las capas patrimoniales
             v_cash += excedente_de_caja_anio
             v_bolsa += bolsa_extra
             v_inmuebles += inmo_extra
             
-            # Crecimiento de mercado e interés compuesto multiactivo
             v_bolsa *= (1 + (rent_bolsa / 100))
             v_pensiones += (total_aportacion_mensual_pensiones * 12)
             v_pensiones *= (1 + (rent_bolsa / 100))
@@ -499,7 +543,7 @@ with tab_proyeccion:
         if mes_cruze != -1:
             st.success(f"💎 **Hito de Independencia Financiera Estimado:** Alcanzarás tu Número FI en el año **{hist_anios[mes_cruze]}** (dentro de {mes_cruze+1} años).")
         
-        # --- GRÁFICO 1: TRAYECTORIA PATRIMONIAL POR CAPAS ---
+        # --- GRÁFICO 1 CORREGIDO: LEYENDA ABAJO HORIZONTAL ---
         fig_sim = go.Figure()
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_cash, mode='lines', name='💼 Cash / Liquidez', stackgroup='one', line=dict(color='#60A5FA', width=0.5)))
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_bolsa, mode='lines', name='📈 Cartera Bolsa', stackgroup='one', line=dict(color='#A78BFA', width=0.5)))
@@ -510,31 +554,33 @@ with tab_proyeccion:
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=[numero_fi]*años_sim, mode='lines', name='Target FI/RE', line=dict(color='#E5E7EB', width=2, dash='dot')))
         
         fig_sim.update_layout(
-            template="plotly_dark", title=dict(text="Trayectoria Patrimonial Compuesta vs Meta de Independencia Financiera", y=0.96, x=0.02),
-            margin=dict(t=50, b=20, l=40, r=180), xaxis_title="Año", yaxis_title="Euros (€)",
-            legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02)
+            template="plotly_dark", 
+            title=dict(text="Trayectoria Patrimonial Compuesta vs Meta de Independencia Financiera", y=0.96, x=0.5, xanchor="center"),
+            margin=dict(t=80, b=120, l=40, r=40), xaxis_title="Año", yaxis_title="Euros (€)",
+            legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5),
+            height=500
         )
         st.plotly_chart(fig_sim, use_container_width=True)
 
         st.divider()
 
-        # --- GRÁFICO 2: BARRAS VERTICALES STACKED DE CASH-FLOW ---
+        # --- GRÁFICO 2 CORREGIDO: LEYENDA ABAJO HORIZONTAL ---
         fig_bar_cf = go.Figure()
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_ahorro_metalico, name='🪙 Salario / Ingresos Activos', marker_color='#2563EB')
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_rentas_inmo, name='🏠 Rentas Inmobiliarias Netas', marker_color='#10B981')
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_dividendos, name='💸 Dividendos Bursátiles', marker_color='#8B5CF6')
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_interes_acum, name='💰 Intereses del Cash Ganados', marker_color='#F59E0B')
-        
         fig_bar_cf.add_trace(go.Scatter(x=hist_anios, y=h_cf_gastos, mode='lines+markers', name='🔴 Gastos Anuales (Umbral de Vida)', line=dict(color='#EF4444', width=3)))
 
         fig_bar_cf.update_layout(
             barmode='stack',
             template="plotly_dark",
-            title=dict(text="Análisis de Flujos de Caja Anuales Reales (Ajustados a Inflación & Retorno Compuesto)", y=0.96, x=0.02),
-            margin=dict(t=50, b=40, l=40, r=180),
+            title=dict(text="Análisis de Flujos de Caja Anuales Reales (Ajustados a Inflación & Retorno Compuesto)", y=0.96, x=0.5, xanchor="center"),
+            margin=dict(t=80, b=120, l=40, r=40),
             xaxis_title="Año",
             yaxis_title="Flujo de Efectivo Real (€ / año)",
-            legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02)
+            legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5),
+            height=500
         )
         st.plotly_chart(fig_bar_cf, use_container_width=True)
 
