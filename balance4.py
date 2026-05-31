@@ -8,12 +8,10 @@ from supabase import create_client, Client
 # 1. Configuración de la página web (Ancho completo e interfaz fluida)
 st.set_page_config(page_title="Mi ERP Financiero Pro", page_icon="📊", layout="wide")
 
-# --- ESTILOS PERSONALIZADOS (Pestañas claras y sin fondo oscuro) ---
+# --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
-    
-    /* Tarjetas de métricas: fondo más claro/grisáceo para romper el negro */
     .tarjeta-metrica {
         padding: 14px 18px;
         border-radius: 8px;
@@ -36,8 +34,6 @@ st.markdown("""
         color: #eceff4;
         white-space: nowrap;
     }
-    
-    /* Botones de navegación de pestañas (Tabs) en color claro/blanco */
     .stTabs [data-baseweb="tab-list"] { 
         gap: 10px; 
         background-color: transparent !important;
@@ -50,9 +46,6 @@ st.markdown("""
         color: #2e3440 !important; 
         font-weight: 600;
         transition: all 0.2s ease;
-    }
-    .stTabs [data-baseweb="tab"]:hover {
-        background-color: #d8dee9;
     }
     .stTabs [aria-selected="true"] {
         background-color: #88c0d0 !important; 
@@ -72,21 +65,20 @@ def init_supabase() -> Client:
 try:
     supabase = init_supabase()
 except Exception as e:
-    st.error("Error de conexión con los Secrets de Supabase. Verifica la configuración.")
+    st.error("Error de conexión con los Secrets de Supabase.")
     st.stop()
 
 # =====================================================================
-# --- INTERFAZ DE AUTENTICACIÓN DINÁMICA (SISTEMA DE CONTRASEÑA) ---
+# --- INTERFAZ DE AUTENTICACIÓN DINÁMICA ---
 # =====================================================================
 st.sidebar.header("🔑 Seguridad de Capas")
-# El identificador de escenario se convierte en la llave de cifrado de la base de datos
 clave_usuario = st.sidebar.text_input("Clave de Acceso Patrimonial", value="Principal", type="password").strip()
 
 if not clave_usuario:
     st.warning("🔒 Introduce una Clave de Acceso en el panel lateral para activar el ERP.")
     st.stop()
 
-# 3. Funciones core de lectura y escritura en la nube vinculadas a la Contraseña
+# Funciones core de lectura y escritura
 def cargar_datos_db(escenario):
     try:
         response = supabase.table("erp_balance").select("*").eq("nombre_escenario", escenario).execute()
@@ -101,54 +93,48 @@ def guardar_datos_db(datos_nuevos, escenario):
         payload = datos_nuevos.copy()
         payload["nombre_escenario"] = escenario
         
-        # Primero verificamos si el usuario ya tiene una fila creada en tu tabla
         check = supabase.table("erp_balance").select("id").eq("nombre_escenario", escenario).execute()
-        
         if check.data:
-            # Si ya existe, actualizamos sus datos estancos
             supabase.table("erp_balance").update(payload).eq("nombre_escenario", escenario).execute()
         else:
-            # Si es un amigo nuevo con una clave nueva, le creamos su registro limpio automáticamente
             supabase.table("erp_balance").insert(payload).execute()
             
         st.toast(f"¡Copia de seguridad guardada para '{escenario}'! 🚀", icon="💾")
     except Exception as e:
         st.error(f"Error al sincronizar con la nube: {e}")
 
-# Forzar recarga en memoria si el usuario cambia de contraseña en el panel lateral
+# CONTROL DE CAMBIO DE USUARIO RADICAL: Si cambia la clave, borramos los estados temporales previos
 if "ultima_clave" not in st.session_state or st.session_state.ultima_clave != clave_usuario:
     st.session_state.ultima_clave = clave_usuario
-    st.session_state.db_data = cargar_datos_db(clave_usuario)
-
-db = st.session_state.db_data
-
-# Resguardo de valores base si la cuenta es totalmente nueva
-if not db:
-    db = {
-        "salario_base": 3200, "liquidez": 15450, 
-        "unidades_voo": 5, "unidades_vale": 20, "unidades_pbr": 15,
-        "valor_inmuebles": 250000, "otros_activos": 24500
-    }
-
-# =====================================================================
-# --- SISTEMA DE ALMACENAMIENTO TEMPORAL (SESSION STATE INTERNO) ---
-# =====================================================================
-if "efectivo_divisas" not in st.session_state or st.sidebar.button("🔄 Cargar/Resetear Datos de esta Clave", use_container_width=True):
-    st.session_state.efectivo_divisas = {"EUR": float(db.get("liquidez", 15450))}
+    datos_db = cargar_datos_db(clave_usuario)
+    
+    # Si no existen datos en la nube para esa clave, cargamos el respaldo inicial limpio
+    if not datos_db:
+        datos_db = {
+            "salario_base": 3200, "liquidez": 15450, 
+            "unidades_voo": 5, "unidades_vale": 20, "unidades_pbr": 15,
+            "valor_inmuebles": 250000, "otros_activos": 24500
+        }
+    
+    # Forzamos la actualización inmediata de la memoria activa de los inputs
+    st.session_state.efectivo_divisas = {"EUR": float(datos_db.get("liquidez", 15450))}
     st.session_state.cartera_usuario = {
-        "PBR": {"unidades": float(db.get("unidades_pbr", 15)), "precio_compra": 12.50},
-        "VALE": {"unidades": float(db.get("unidades_vale", 20)), "precio_compra": 11.20},
-        "VOO": {"unidades": float(db.get("unidades_voo", 5)), "precio_compra": 420.00}
+        "PBR": {"unidades": float(datos_db.get("unidades_pbr", 15)), "precio_compra": 12.50},
+        "VALE": {"unidades": float(datos_db.get("unidades_vale", 20)), "precio_compra": 11.20},
+        "VOO": {"unidades": float(datos_db.get("unidades_voo", 5)), "precio_compra": 420.00}
     }
-    st.session_state.fincas_usuario = [{"Nombre": "Ático Alicante Centro", "Catastro": "9872023VH5797S0001WX", "Valor": float(db.get("valor_inmuebles", 250000))}]
+    st.session_state.fincas_usuario = [{"Nombre": "Ático Alicante Centro", "Catastro": "9872023VH5797S0001WX", "Valor": float(datos_db.get("valor_inmuebles", 250000))}]
     st.session_state.pensiones_usuario = [
         {"Nombre": "401k USA Plan", "Valor": 45000.0},
         {"Nombre": "Workplace Pension UK", "Valor": 28000.0}
     ]
-    st.session_state.otros_activos_usuario = [{"Nombre": "Vehículo Familiar", "Valor": float(db.get("otros_activos", 24500))}]
+    st.session_state.otros_activos_usuario = [{"Nombre": "Vehículo Familiar", "Valor": float(datos_db.get("otros_activos", 24500))}]
     st.session_state.deudas_usuario = [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}]
-    st.session_state.db_data = db
+    st.session_state.salario_base_input = float(datos_db.get("salario_base", 3200))
+    st.session_state.db_data = datos_db
     st.rerun()
+
+db = st.session_state.db_data
 
 if "plusvalia_bolsa_real" not in st.session_state:
     st.session_state.plusvalia_bolsa_real = 0.0
@@ -273,9 +259,9 @@ with tab_balance:
         
         categoria_inmobiliario = sum(f['Valor'] for f in st.session_state.fincas_usuario)
         for idx, f in enumerate(st.session_state.fincas_usuario):
-            c_inf, c_del = st.columns([4, 1])
-            c_inf.caption(f"🏢 *{f['Nombre']}* ({f['Valor']:,} €)")
-            if c_del.button("🗑️", key=f"df_{idx}"):
+            relative_col, delete_col = st.columns([4, 1])
+            relative_col.caption(f"🏢 *{f['Nombre']}* ({f['Valor']:,} €)")
+            if delete_col.button("🗑️", key=f"df_{idx}"):
                 st.session_state.fincas_usuario.pop(idx); st.rerun()
 
         st.divider()
@@ -330,14 +316,13 @@ with tab_balance:
         patrimonio_neto = activo_total - pasivo_total
         pct_cash = (categoria_cash / activo_total * 100) if activo_total > 0 else 0.0
 
-        # BOTONES DE ACCIÓN VINCULADOS A LA CLAVE SELECCIONADA
         c_rec, c_sav = st.columns(2)
         if c_rec.button("🔄 Recalcular Todo el Balance", type="primary", use_container_width=True):
             st.rerun()
         
         if c_sav.button("💾 Guardar Datos en la Nube", type="secondary", use_container_width=True):
             payload = {
-                "salario_base": float(db.get("salario_base", 3200)),
+                "salario_base": float(st.session_state.get("salario_base_input", 3200)),
                 "liquidez": float(categoria_cash),
                 "unidades_voo": float(st.session_state.cartera_usuario.get("VOO", {}).get("unidades", 0)),
                 "unidades_vale": float(st.session_state.cartera_usuario.get("VALE", {}).get("unidades", 0)),
@@ -456,7 +441,7 @@ with tab_proyeccion:
                     total_anual_deducible_pensiones_usuario += (aport_user * 12)
 
         st.subheader("🟢 Otros Ingresos & Gastos Base")
-        salario_neto_base = st.number_input("Salario Neto Base Mensual (€)", min_value=0.0, value=float(db.get("salario_base", 3200)), step=100.0)
+        salario_neto_base = st.number_input("Salario Neto Base Mensual (€)", min_value=0.0, value=float(db.get("salario_base", 3200)), key="salario_base_input", step=100.0)
         gastos_vida_base = st.number_input("Gastos de Vida Base Mensuales (€)", min_value=0.0, value=1800.0, step=100.0)
         
         st.divider()
@@ -491,7 +476,7 @@ with tab_proyeccion:
         pct_inflacion = c_p5.slider("🔥 Inflación (%)", 0.0, 8.0, 2.5, step=0.1)
 
         with st.expander("🎛️ CONFIGURAR MATRIX EVOLUTIVA ANUAL (EDITAR VALORES POR AÑO)", expanded=True):
-            st.caption("Ajusta los flujos estimados para cada año futuro. Puedes simular subidas de salario, caídas de alquileres o compras indexadas.")
+            st.caption("Ajusta los flujos estimados para cada año futuro.")
             anios_index = [f"Año {i}" for i in range(1, años_sim + 1)]
             data_matrix = {
                 "Salario Neto Anual (€)": [int(salario_neto_base * 12)] * años_sim,
@@ -582,7 +567,7 @@ with tab_proyeccion:
         if mes_cruze != -1:
             st.success(f"💎 **Hito de Independencia Financiera Estimado:** Alcanzarás tu Número FI en el año **{hist_anios[mes_cruze]}** (dentro de {mes_cruze+1} años).")
         
-        # --- GRÁFICO 1 TÍTULO COMPACTO EN 2 LÍNEAS (t=110) ---
+        # --- GRÁFICOS ---
         fig_sim = go.Figure()
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_cash, mode='lines', name='💼 Cash / Liquidez', stackgroup='one', line=dict(color='#60A5FA', width=0.5)))
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_bolsa, mode='lines', name='📈 Cartera Bolsa', stackgroup='one', line=dict(color='#A78BFA', width=0.5)))
@@ -604,7 +589,6 @@ with tab_proyeccion:
 
         st.divider()
 
-        # --- GRÁFICO 2 TÍTULO COMPACTO EN 2 LÍNEAS (t=110) ---
         fig_bar_cf = go.Figure()
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_ahorro_metalico, name='🪙 Salario / Ingresos Activos', marker_color='#2563EB')
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_rentas_inmo, name='🏠 Rentas Inmobiliarias Netas', marker_color='#10B981')
