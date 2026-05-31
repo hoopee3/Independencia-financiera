@@ -8,37 +8,58 @@ from supabase import create_client, Client
 # 1. Configuración de la página web (Ancho completo e interfaz fluida)
 st.set_page_config(page_title="Mi ERP Financiero Pro", page_icon="📊", layout="wide")
 
-# Estilos personalizados e inyección CSS para optimización en móviles
+# --- ESTILOS PERSONALIZADOS ACTUALIZADOS (Pestañas claras y tarjetas legibles) ---
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
+    
+    /* Tarjetas de métricas: fondo más claro/grisáceo para romper el negro */
     .tarjeta-metrica {
-        padding: 12px 16px;
+        padding: 14px 18px;
         border-radius: 8px;
-        border: 1px solid #262730;
-        background-color: #161a24;
+        border: 1px solid #3b4252;
+        background-color: #2e3440;
         margin-bottom: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
     .metrica-titulo {
-        font-size: 0.8rem;
+        font-size: 0.85rem;
         font-weight: 600;
-        color: #9ca3af;
+        color: #d8dee9;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         margin-bottom: 4px;
     }
     .metrica-valor {
-        font-size: 1.6rem;
+        font-size: 1.65rem;
         font-weight: 700;
-        color: #ffffff;
+        color: #eceff4;
         white-space: nowrap;
     }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    
+    /* Botones de navegación de pestañas (Tabs) en color claro/blanco */
+    .stTabs [data-baseweb="tab-list"] { 
+        gap: 10px; 
+        background-color: #1e222b;
+        padding: 6px 10px;
+        border-radius: 8px;
+    }
     .stTabs [data-baseweb="tab"] { 
-        padding: 8px 16px; 
-        background-color: #161a24; 
-        border-radius: 8px 8px 0 0;
-        color: #9ca3af;
+        padding: 10px 20px; 
+        background-color: #eceff4; /* Blanco/Gris muy claro de base */
+        border-radius: 6px;
+        color: #2e3440 !important; /* Texto oscuro para contraste radical */
+        font-weight: 600;
+        transition: all 0.2s ease;
+    }
+    /* Estilo cuando pasas el ratón o la pestaña está seleccionada */
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #d8dee9;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #88c0d0 !important; /* Azul claro para destacar la pestaña activa */
+        color: #2e3440 !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -291,7 +312,7 @@ with tab_balance:
         patrimonio_neto = activo_total - pasivo_total
         pct_cash = (categoria_cash / activo_total * 100) if activo_total > 0 else 0.0
 
-        # BOTÓN MAESTRO DE COPÌA DE SEGURIDAD CLOUD
+        # BOTONES DE ACCIÓN PRINCIPALES
         c_rec, c_sav = st.columns(2)
         if c_rec.button("🔄 Recalcular Todo el Balance", type="primary", use_container_width=True):
             st.rerun()
@@ -543,7 +564,7 @@ with tab_proyeccion:
         if mes_cruze != -1:
             st.success(f"💎 **Hito de Independencia Financiera Estimado:** Alcanzarás tu Número FI en el año **{hist_anios[mes_cruze]}** (dentro de {mes_cruze+1} años).")
         
-        # --- GRÁFICO 1 CORREGIDO: LEYENDA ABAJO HORIZONTAL ---
+        # --- GRÁFICO 1 AJUSTADO: LEYENDA SEPARADA ABAJO BAJO ---
         fig_sim = go.Figure()
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_cash, mode='lines', name='💼 Cash / Liquidez', stackgroup='one', line=dict(color='#60A5FA', width=0.5)))
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_bolsa, mode='lines', name='📈 Cartera Bolsa', stackgroup='one', line=dict(color='#A78BFA', width=0.5)))
@@ -556,15 +577,17 @@ with tab_proyeccion:
         fig_sim.update_layout(
             template="plotly_dark", 
             title=dict(text="Trayectoria Patrimonial Compuesta vs Meta de Independencia Financiera", y=0.96, x=0.5, xanchor="center"),
-            margin=dict(t=80, b=120, l=40, r=40), xaxis_title="Año", yaxis_title="Euros (€)",
-            legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5),
-            height=500
+            # Añadimos margen inferior drástico (b=160) y bajamos el offset de la leyenda (y=-0.55) para que no invada el eje X
+            margin=dict(t=80, b=160, l=40, r=40), 
+            xaxis_title="Año", yaxis_title="Euros (€)",
+            legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5),
+            height=520
         )
         st.plotly_chart(fig_sim, use_container_width=True)
 
         st.divider()
 
-        # --- GRÁFICO 2 CORREGIDO: LEYENDA ABAJO HORIZONTAL ---
+        # --- GRÁFICO 2 AJUSTADO: LEYENDA SEPARADA ABAJO BAJO ---
         fig_bar_cf = go.Figure()
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_ahorro_metalico, name='🪙 Salario / Ingresos Activos', marker_color='#2563EB')
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_rentas_inmo, name='🏠 Rentas Inmobiliarias Netas', marker_color='#10B981')
@@ -576,11 +599,11 @@ with tab_proyeccion:
             barmode='stack',
             template="plotly_dark",
             title=dict(text="Análisis de Flujos de Caja Anuales Reales (Ajustados a Inflación & Retorno Compuesto)", y=0.96, x=0.5, xanchor="center"),
-            margin=dict(t=80, b=120, l=40, r=40),
+            margin=dict(t=80, b=160, l=40, r=40),
             xaxis_title="Año",
             yaxis_title="Flujo de Efectivo Real (€ / año)",
-            legend=dict(orientation="h", yanchor="bottom", y=-0.4, xanchor="center", x=0.5),
-            height=500
+            legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5),
+            height=520
         )
         st.plotly_chart(fig_bar_cf, use_container_width=True)
 
