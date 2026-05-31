@@ -68,33 +68,8 @@ except Exception as e:
     st.error("Error de conexión con los Secrets de Supabase.")
     st.stop()
 
-# Funciones core de lectura y escritura
-def cargar_datos_db(escenario):
-    try:
-        response = supabase.table("erp_balance").select("*").eq("nombre_escenario", escenario).execute()
-        if response.data:
-            return response.data[0]
-    except Exception as e:
-        pass
-    return None
-
-def guardar_datos_db(datos_nuevos, escenario):
-    try:
-        payload = datos_nuevos.copy()
-        payload["nombre_escenario"] = escenario
-        
-        check = supabase.table("erp_balance").select("id").eq("nombre_escenario", escenario).execute()
-        if check.data:
-            supabase.table("erp_balance").update(payload).eq("nombre_escenario", escenario).execute()
-        else:
-            supabase.table("erp_balance").insert(payload).execute()
-            
-        st.toast(f"¡Copia de seguridad guardada para '{escenario}'! 🚀", icon="💾")
-    except Exception as e:
-        st.error(f"Error al sincronizar con la nube: {e}")
-
 # =====================================================================
-# --- FORMULARIO LATERAL DE ACCESO (BOTÓN FÍSICO INTEGRADO) ---
+# --- INTERFAZ DE AUTENTICACIÓN DINÁMICA ---
 # =====================================================================
 st.sidebar.header("🔑 Seguridad de Capas")
 
@@ -102,40 +77,88 @@ with st.sidebar.form("form_autenticacion"):
     clave_input = st.text_input("Clave de Acceso Patrimonial", value=st.session_state.get("ultima_clave", "Principal"), type="password").strip()
     btn_acceder = st.form_submit_button("🔓 Cargar / Forzar Datos", use_container_width=True)
 
-# Si el usuario hunde el botón o no existe clave guardada todavía en la sesión, disparamos la sincronización
+# Funciones de lectura y escritura estructurada por JSON Global
+def cargar_datos_db(escenario):
+    try:
+        response = supabase.table("erp_balance").select("*").eq("nombre_escenario", escenario).execute()
+        if response.data:
+            registro = response.data[0]
+            # Si tiene guardado el paquete JSON completo, lo priorizamos
+            if "datos_completos" in registro and registro["datos_completos"]:
+                return registro["datos_completos"]
+            else:
+                # Si es un registro viejo de la tabla antigua, mapeamos la compatibilidad
+                return {
+                    "salario_base": float(registro.get("salario_base", 3200)),
+                    "efectivo_divisas": {"EUR": float(registro.get("liquidez", 15450))},
+                    "cartera_usuario": {
+                        "PBR": {"unidades": float(registro.get("unidades_pbr", 15)), "precio_compra": 12.50},
+                        "VALE": {"unidades": float(registro.get("unidades_vale", 20)), "precio_compra": 11.20},
+                        "VOO": {"unidades": float(registro.get("unidades_voo", 5)), "precio_compra": 420.00}
+                    },
+                    "fincas_usuario": [{"Nombre": "Ático Alicante Centro", "Catastro": "9872023VH5797S0001WX", "Valor": float(registro.get("valor_inmuebles", 250000))}],
+                    "pensiones_usuario": [{"Nombre": "401k USA Plan", "Valor": 45000.0}, {"Nombre": "Workplace Pension UK", "Valor": 28000.0}],
+                    "otros_activos_usuario": [{"Nombre": "Vehículo Familiar", "Valor": float(registro.get("otros_activos", 24500))}],
+                    "deudas_usuario": [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}]
+                }
+    except Exception as e:
+        pass
+    return None
+
+def guardar_datos_db(paquete_total, escenario):
+    try:
+        # Estructuramos el payload enviando los datos fijos de respaldo y el JSON integral
+        payload = {
+            "nombre_escenario": escenario,
+            "salario_base": float(paquete_total.get("salario_base", 3200)),
+            "liquidez": float(paquete_total["efectivo_divisas"].get("EUR", 0.0)),
+            "valor_inmuebles": float(sum(f['Valor'] for f in paquete_total.get("fincas_usuario", []))),
+            "datos_completos": paquete_total # <--- AQUÍ SE GUARDA ABSOLUTAMENTE TODO EL PAQUETE DINÁMICO
+        }
+        
+        check = supabase.table("erp_balance").select("id").eq("nombre_escenario", escenario).execute()
+        if check.data:
+            supabase.table("erp_balance").update(payload).eq("nombre_escenario", escenario).execute()
+        else:
+            supabase.table("erp_balance").insert(payload).execute()
+            
+        st.toast(f"¡Estructura patrimonial guardada al 100% para '{escenario}'! 💾🚀", icon="💾")
+    except Exception as e:
+        st.error(f"Error al sincronizar con la nube: {e}")
+
+# DISPARADOR DE CARGA: Si el usuario pulsa el botón o cambia de clave de sesión
 if btn_acceder or "ultima_clave" not in st.session_state:
     st.session_state.ultima_clave = clave_input
-    datos_db = cargar_datos_db(clave_input)
+    pack_datos = cargar_datos_db(clave_input)
     
-    # Si la clave no tiene datos en tu Supabase, le asignamos la plantilla de respaldo inicial
-    if not datos_db:
-        datos_db = {
-            "salario_base": 3200, "liquidez": 15450, 
-            "unidades_voo": 5, "unidades_vale": 20, "unidades_pbr": 15,
-            "valor_inmuebles": 250000, "otros_activos": 24500
+    # Plantilla inicial estandarizada por si la cuenta es totalmente nueva
+    if not pack_datos:
+        pack_datos = {
+            "salario_base": 3200.0,
+            "efectivo_divisas": {"EUR": 15450.0},
+            "cartera_usuario": {
+                "PBR": {"unidades": 15.0, "precio_compra": 12.50},
+                "VALE": {"unidades": 20.0, "precio_compra": 11.20},
+                "VOO": {"unidades": 5.0, "precio_compra": 420.00}
+            },
+            "fincas_usuario": [{"Nombre": "Ático Alicante Centro", "Catastro": "9872023VH5797S0001WX", "Valor": 250000.0}],
+            "pensiones_usuario": [{"Nombre": "401k USA Plan", "Valor": 45000.0}, {"Nombre": "Workplace Pension UK", "Valor": 28000.0}],
+            "otros_activos_usuario": [{"Nombre": "Vehículo Familiar", "Valor": 24500.0}],
+            "deudas_usuario": [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}]
         }
     
-    # Guardamos la foto real en el estado de memoria para los inputs
-    st.session_state.efectivo_divisas = {"EUR": float(datos_db.get("liquidez", 15450))}
-    st.session_state.cartera_usuario = {
-        "PBR": {"unidades": float(datos_db.get("unidades_pbr", 15)), "precio_compra": 12.50},
-        "VALE": {"unidades": float(datos_db.get("unidades_vale", 20)), "precio_compra": 11.20},
-        "VOO": {"unidades": float(datos_db.get("unidades_voo", 5)), "precio_compra": 420.00}
-    }
-    st.session_state.fincas_usuario = [{"Nombre": "Ático Alicante Centro", "Catastro": "9872023VH5797S0001WX", "Valor": float(datos_db.get("valor_inmuebles", 250000))}]
-    st.session_state.pensiones_usuario = [
-        {"Nombre": "401k USA Plan", "Valor": 45000.0},
-        {"Nombre": "Workplace Pension UK", "Valor": 28000.0}
-    ]
-    st.session_state.otros_activos_usuario = [{"Nombre": "Vehículo Familiar", "Valor": float(datos_db.get("otros_activos", 24500))}]
-    st.session_state.deudas_usuario = [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}]
-    st.session_state.salario_base_input = float(datos_db.get("salario_base", 3200))
-    st.session_state.db_data = datos_db
+    # Inyectamos de forma limpia el paquete completo en la memoria del estado de Streamlit
+    st.session_state.salario_base_input = float(pack_datos.get("salario_base", 3200.0))
+    st.session_state.efectivo_divisas = pack_datos.get("efectivo_divisas", {"EUR": 15450.0})
+    st.session_state.cartera_usuario = pack_datos.get("cartera_usuario", {})
+    st.session_state.fincas_usuario = pack_datos.get("fincas_usuario", [])
+    st.session_state.pensiones_usuario = pack_datos.get("pensiones_usuario", [])
+    st.session_state.otros_activos_usuario = pack_datos.get("otros_activos_usuario", [])
+    st.session_state.deudas_usuario = pack_datos.get("deudas_usuario", [])
+    st.session_state.db_data = pack_datos
     st.rerun()
 
-# Recuperamos la clave activa definitiva de la sesión
 clave_usuario = st.session_state.ultima_clave
-db = st.session_state.db_data
 
 if "plusvalia_bolsa_real" not in st.session_state:
     st.session_state.plusvalia_bolsa_real = 0.0
@@ -152,9 +175,7 @@ tab_balance, tab_proyeccion, tab_fiscalidad = st.tabs([
     "📑 Tax Alpha e Impuestos"
 ])
 
-# =====================================================================
-# HELPER: CONVERSIÓN DE DIVISAS
-# =====================================================================
+# Helper conversión divisas
 def obtener_conversion_eur(monto, divisa):
     if divisa == "EUR" or monto == 0:
         return monto
@@ -268,7 +289,7 @@ with tab_balance:
         st.divider()
         st.subheader("🛡️ 4. Planes de Pensiones")
         with st.form("form_pensiones"):
-            n_p = st.text_input("Nombre del Plan", placeholder="Ej. 401k USA o Workplace Pension UK")
+            n_p = st.text_input("Nombre del Plan", placeholder="Ej. 401k USA")
             v_p = st.number_input("Valor de Mercado actual (€)", min_value=0.0, step=1000.0)
             if st.form_submit_button("➕ Agregar Plan") and n_p:
                 st.session_state.pensiones_usuario.append({"Nombre": n_p, "Valor": float(v_p)})
@@ -322,17 +343,18 @@ with tab_balance:
             st.rerun()
         
         if c_sav.button("💾 Guardar Datos en la Nube", type="secondary", use_container_width=True):
-            payload = {
-                "salario_base": float(st.session_state.get("salario_base_input", 3200)),
-                "liquidez": float(categoria_cash),
-                "unidades_voo": float(st.session_state.cartera_usuario.get("VOO", {}).get("unidades", 0)),
-                "unidades_vale": float(st.session_state.cartera_usuario.get("VALE", {}).get("unidades", 0)),
-                "unidades_pbr": float(st.session_state.cartera_usuario.get("PBR", {}).get("unidades", 0)),
-                "valor_inmuebles": float(categoria_inmobiliario),
-                "otros_activos": float(categoria_otros)
+            # Empaquetamos absolutamente toda la memoria de la sesión para salvarla en el JSON global
+            paquete_completo = {
+                "salario_base": float(st.session_state.get("salario_base_input", 3200.0)),
+                "efectivo_divisas": st.session_state.efectivo_divisas,
+                "cartera_usuario": st.session_state.cartera_usuario,
+                "fincas_usuario": st.session_state.fincas_usuario,
+                "pensiones_usuario": st.session_state.pensiones_usuario,
+                "otros_activos_usuario": st.session_state.otros_activos_usuario,
+                "deudas_usuario": st.session_state.deudas_usuario
             }
-            guardar_datos_db(payload, clave_usuario)
-            st.session_state.db_data = payload
+            guardar_datos_db(paquete_completo, clave_usuario)
+            st.session_state.db_data = paquete_completo
             
         c1, c2, c3, c4 = st.columns(4)
         c1.markdown(f"<div class='tarjeta-metrica'><div class='metrica-titulo'>🟢 Activo Total</div><div class='metrica-valor'>{int(activo_total):,} €</div></div>", unsafe_allow_html=True)
@@ -442,8 +464,7 @@ with tab_proyeccion:
                     total_anual_deducible_pensiones_usuario += (aport_user * 12)
 
         st.subheader("🟢 Otros Ingresos & Gastos Base")
-        salario_neto_base = st.number_input("Salario Neto Base Mensual (€)", min_value=0.0, value=float(st.session_state.get("salario_base_input", 3200)), key="salario_base_input_main", step=100.0)
-        # Sincronizamos el estado interno por si el usuario cambia el salario en la pantalla principal
+        salario_neto_base = st.number_input("Salario Neto Base Mensual (€)", min_value=0.0, value=float(st.session_state.get("salario_base_input", 3200.0)), key="salario_base_input_main", step=100.0)
         st.session_state.salario_base_input = salario_neto_base
         gastos_vida_base = st.number_input("Gastos de Vida Base Mensuales (€)", min_value=0.0, value=1800.0, step=100.0)
         
@@ -492,16 +513,6 @@ with tab_proyeccion:
             df_matrix_base = pd.DataFrame(data_matrix, index=anios_index)
             df_matrix_edited = st.data_editor(df_matrix_base, use_container_width=True)
 
-        with st.expander("⚠️ CONFIGURAR ESCENARIOS DE CRISIS"):
-            c_str1, c_str2 = st.columns(2)
-            activar_crash = c_str1.checkbox("💥 Activar Crashes Bursátiles")
-            lista_años_crashes = c_str1.multiselect("¿Años con Crash?", list(range(1, años_sim + 1)), default=[3]) if activar_crash else []
-            caida_crash = c_str1.slider("Magnitud Caída (%)", 10, 60, 30, step=5) if activar_crash else 30
-            
-            activar_vacio = c_str2.checkbox("🏠 Activar Desocupación Inmobiliaria")
-            lista_años_vacios = c_str2.multiselect("¿Años con vacío?", list(range(1, años_sim + 1)), default=[2]) if activar_vacio else []
-            meses_vacio = c_str2.slider("Meses vacíos en esos años", 1, 12, 6) if activar_vacio else 6
-
         # --- BUCLE DE CÓMPUTO CIENTÍFICO FINANCIERO ---
         v_cash = float(categoria_cash)
         v_bolsa = float(total_bolsa)
@@ -523,9 +534,6 @@ with tab_proyeccion:
             bolsa_extra = df_matrix_edited.loc[anio_label, "Aportación Bolsa Extra (€/año)"]
             inmo_extra = df_matrix_edited.loc[anio_label, "Inversión Inmobiliaria Nueva (€/año)"]
             
-            if activar_vacio and ((idx + 1) in lista_años_vacios):
-                rentas_recibidas *= (1.0 - (meses_vacio / 12.0))
-            
             intereses_generados_este_anio = v_cash * (interes_cash / 100)
             ingresos_totales_anio = salario_recibido + rentas_recibidas + dividendos_recibidos + intereses_generados_este_anio
             excedente_de_caja_anio = ingresos_totales_anio - gastos_soportados - bolsa_extra - inmo_extra
@@ -546,10 +554,6 @@ with tab_proyeccion:
             v_pensiones += (total_aportacion_mensual_pensiones * 12)
             v_pensiones *= (1 + (rent_bolsa / 100))
             v_inmuebles *= (1 + (reval_inm / 100))
-            
-            if activar_crash and ((idx + 1) in lista_años_crashes):
-                v_bolsa *= (1.0 - (caida_crash / 100))
-                v_pensiones *= (1.0 - (caida_crash / 100))
             
             patrimonio_nominal_total = v_cash + v_bolsa + v_pensiones + v_inmuebles + v_otros_netos
             patrimonio_deflactado = patrimonio_nominal_total / factor_deflactor
@@ -589,27 +593,6 @@ with tab_proyeccion:
             height=520
         )
         st.plotly_chart(fig_sim, use_container_width=True)
-
-        st.divider()
-
-        fig_bar_cf = go.Figure()
-        fig_bar_cf.add_bar(x=hist_anios, y=h_cf_ahorro_metalico, name='🪙 Salario / Ingresos Activos', marker_color='#2563EB')
-        fig_bar_cf.add_bar(x=hist_anios, y=h_cf_rentas_inmo, name='🏠 Rentas Inmobiliarias Netas', marker_color='#10B981')
-        fig_bar_cf.add_bar(x=hist_anios, y=h_cf_dividendos, name='💸 Dividendos Bursátiles', marker_color='#8B5CF6')
-        fig_bar_cf.add_bar(x=hist_anios, y=h_cf_interes_acum, name='💰 Intereses del Cash Ganados', marker_color='#F59E0B')
-        fig_bar_cf.add_trace(go.Scatter(x=hist_anios, y=h_cf_gastos, mode='lines+markers', name='🔴 Gastos Anuales (Umbral de Vida)', line=dict(color='#EF4444', width=3)))
-
-        fig_bar_cf.update_layout(
-            barmode='stack',
-            template="plotly_dark",
-            title=dict(text="Análisis de Flujos de Caja Anuales Reales<br>(Ajustados a Inflación & Retorno Compuesto)", y=0.96, x=0.5, xanchor="center"),
-            margin=dict(t=110, b=160, l=40, r=40),
-            xaxis_title="Año",
-            yaxis_title="Flujo de Efectivo Real (€ / año)",
-            legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5),
-            height=520
-        )
-        st.plotly_chart(fig_bar_cf, use_container_width=True)
 
 # =====================================================================
 # PESTAÑA 3: TAX ALPHA E IMPUESTOS
