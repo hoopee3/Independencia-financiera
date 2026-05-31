@@ -75,31 +75,54 @@ except Exception as e:
     st.error("Error de conexión con los Secrets de Supabase. Verifica la configuración.")
     st.stop()
 
-# 3. Funciones core de lectura y escritura en la nube
-def cargar_datos_db():
+# =====================================================================
+# --- INTERFAZ DE AUTENTICACIÓN DINÁMICA (SISTEMA DE CONTRASEÑA) ---
+# =====================================================================
+st.sidebar.header("🔑 Seguridad de Capas")
+# El identificador de escenario se convierte en la llave de cifrado de la base de datos
+clave_usuario = st.sidebar.text_input("Clave de Acceso Patrimonial", value="Principal", type="password").strip()
+
+if not clave_usuario:
+    st.warning("🔒 Introduce una Clave de Acceso en el panel lateral para activar el ERP.")
+    st.stop()
+
+# 3. Funciones core de lectura y escritura en la nube vinculadas a la Contraseña
+def cargar_datos_db(escenario):
     try:
-        response = supabase.table("erp_balance").select("*").eq("nombre_escenario", "Principal").execute()
+        response = supabase.table("erp_balance").select("*").eq("nombre_escenario", escenario).execute()
         if response.data:
             return response.data[0]
     except Exception as e:
         pass
     return None
 
-def guardar_datos_db(datos_nuevos):
+def guardar_datos_db(datos_nuevos, escenario):
     try:
         payload = datos_nuevos.copy()
-        payload["nombre_escenario"] = "Principal"
-        supabase.table("erp_balance").update(payload).eq("nombre_escenario", "Principal").execute()
-        st.toast("¡Copia de seguridad guardada en Supabase Cloud! 🚀", icon="💾")
+        payload["nombre_escenario"] = escenario
+        
+        # Primero verificamos si el usuario ya tiene una fila creada en tu tabla
+        check = supabase.table("erp_balance").select("id").eq("nombre_escenario", escenario).execute()
+        
+        if check.data:
+            # Si ya existe, actualizamos sus datos estancos
+            supabase.table("erp_balance").update(payload).eq("nombre_escenario", escenario).execute()
+        else:
+            # Si es un amigo nuevo con una clave nueva, le creamos su registro limpio automáticamente
+            supabase.table("erp_balance").insert(payload).execute()
+            
+        st.toast(f"¡Copia de seguridad guardada para '{escenario}'! 🚀", icon="💾")
     except Exception as e:
         st.error(f"Error al sincronizar con la nube: {e}")
 
-# Inicialización única desde la Base de Datos al arrancar
-if "db_data" not in st.session_state:
-    st.session_state.db_data = cargar_datos_db()
+# Forzar recarga en memoria si el usuario cambia de contraseña en el panel lateral
+if "ultima_clave" not in st.session_state or st.session_state.ultima_clave != clave_usuario:
+    st.session_state.ultima_clave = clave_usuario
+    st.session_state.db_data = cargar_datos_db(clave_usuario)
 
 db = st.session_state.db_data
 
+# Resguardo de valores base si la cuenta es totalmente nueva
 if not db:
     db = {
         "salario_base": 3200, "liquidez": 15450, 
@@ -110,35 +133,26 @@ if not db:
 # =====================================================================
 # --- SISTEMA DE ALMACENAMIENTO TEMPORAL (SESSION STATE INTERNO) ---
 # =====================================================================
-if "efectivo_divisas" not in st.session_state:
+if "efectivo_divisas" not in st.session_state or st.sidebar.button("🔄 Cargar/Resetear Datos de esta Clave", use_container_width=True):
     st.session_state.efectivo_divisas = {"EUR": float(db.get("liquidez", 15450))}
-
-if "cartera_usuario" not in st.session_state:
     st.session_state.cartera_usuario = {
         "PBR": {"unidades": float(db.get("unidades_pbr", 15)), "precio_compra": 12.50},
         "VALE": {"unidades": float(db.get("unidades_vale", 20)), "precio_compra": 11.20},
         "VOO": {"unidades": float(db.get("unidades_voo", 5)), "precio_compra": 420.00}
     }
-
-if "fincas_usuario" not in st.session_state:
     st.session_state.fincas_usuario = [{"Nombre": "Ático Alicante Centro", "Catastro": "9872023VH5797S0001WX", "Valor": float(db.get("valor_inmuebles", 250000))}]
-
-if "pensiones_usuario" not in st.session_state:
     st.session_state.pensiones_usuario = [
         {"Nombre": "401k USA Plan", "Valor": 45000.0},
         {"Nombre": "Workplace Pension UK", "Valor": 28000.0}
     ]
-
-if "otros_activos_usuario" not in st.session_state:
     st.session_state.otros_activos_usuario = [{"Nombre": "Vehículo Familiar", "Valor": float(db.get("otros_activos", 24500))}]
-
-if "deudas_usuario" not in st.session_state:
     st.session_state.deudas_usuario = [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}]
+    st.session_state.db_data = db
+    st.rerun()
 
 if "plusvalia_bolsa_real" not in st.session_state:
     st.session_state.plusvalia_bolsa_real = 0.0
 
-# Inicializamos el diccionario de caché global en memoria para que esté disponible en todo momento
 if "info_tickers_cache" not in st.session_state:
     st.session_state.info_tickers_cache = {}
 
@@ -234,7 +248,6 @@ with tab_balance:
                     valor_posicion = precio_eur * unidades
                     total_bolsa += valor_posicion
                     
-                    # Almacenamos la info estructurada en el estado global
                     st.session_state.info_tickers_cache[ticker] = {"precio_eur": precio_eur, "unidades": unidades, "ticker_obj": tick_info}
                     
                     coste_total_orig = p_compra * unidades
@@ -317,6 +330,7 @@ with tab_balance:
         patrimonio_neto = activo_total - pasivo_total
         pct_cash = (categoria_cash / activo_total * 100) if activo_total > 0 else 0.0
 
+        # BOTONES DE ACCIÓN VINCULADOS A LA CLAVE SELECCIONADA
         c_rec, c_sav = st.columns(2)
         if c_rec.button("🔄 Recalcular Todo el Balance", type="primary", use_container_width=True):
             st.rerun()
@@ -331,7 +345,7 @@ with tab_balance:
                 "valor_inmuebles": float(categoria_inmobiliario),
                 "otros_activos": float(categoria_otros)
             }
-            guardar_datos_db(payload)
+            guardar_datos_db(payload, clave_usuario)
             st.session_state.db_data = payload
             
         c1, c2, c3, c4 = st.columns(4)
@@ -409,7 +423,6 @@ with tab_proyeccion:
             st.caption("⚠️ No hay inmuebles en la Pestaña 1.")
         else:
             for f in st.session_state.fincas_usuario:
-                # CORREGIDO: st.expander con 'st' minúscula para solventar el NameError de la captura
                 with st.expander(f"🏢 Analítica: {f['Nombre']}", expanded=True):
                     c_in1, c_in2, c_in3 = st.columns(3)
                     ing_alq = c_in1.number_input("Alquiler/mes (€)", min_value=0.0, value=900.0, key=f"alq_{f['Nombre']}", step=50.0)
