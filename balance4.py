@@ -68,16 +68,7 @@ except Exception as e:
     st.error("Error de conexión con los Secrets de Supabase.")
     st.stop()
 
-# =====================================================================
-# --- INTERFAZ DE AUTENTICACIÓN DINÁMICA ---
-# =====================================================================
-st.sidebar.header("🔑 Seguridad de Capas")
-
-with st.sidebar.form("form_autenticacion"):
-    clave_input = st.text_input("Clave de Acceso Patrimonial", value=st.session_state.get("ultima_clave", "Principal"), type="password").strip()
-    btn_acceder = st.form_submit_button("🔓 Cargar / Forzar Datos", use_container_width=True)
-
-# Funciones de lectura y escritura estructurada por JSON Global
+# Funciones core de lectura y escritura estructurada por JSON Global
 def cargar_datos_db(escenario):
     try:
         response = supabase.table("erp_balance").select("*").eq("nombre_escenario", escenario).execute()
@@ -97,7 +88,11 @@ def cargar_datos_db(escenario):
                     "fincas_usuario": [{"Nombre": "Ático Alicante Centro", "Catastro": "9872023VH5797S0001WX", "Valor": float(registro.get("valor_inmuebles", 250000))}],
                     "pensiones_usuario": [{"Nombre": "401k USA Plan", "Valor": 45000.0}, {"Nombre": "Workplace Pension UK", "Valor": 28000.0}],
                     "otros_activos_usuario": [{"Nombre": "Vehículo Familiar", "Valor": float(registro.get("otros_activos", 24500))}],
-                    "deudas_usuario": [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}]
+                    "deudas_usuario": [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}],
+                    # Valores por defecto para la Tab 2 si viene de un registro viejo
+                    "analitica_inmuebles": {},
+                    "planificacion_pensiones": {},
+                    "gastos_vida_base": 1800.0
                 }
     except Exception as e:
         pass
@@ -119,11 +114,11 @@ def guardar_datos_db(paquete_total, escenario):
         else:
             supabase.table("erp_balance").insert(payload).execute()
             
-        st.toast(f"¡Estructura patrimonial guardada al 100% para '{escenario}'! 💾🚀", icon="💾")
+        st.toast(f"¡Estructura patrimonial y flujos guardados al 100%! 💾🚀", icon="💾")
     except Exception as e:
         st.error(f"Error al sincronizar con la nube: {e}")
 
-# DISPARADOR DE CARGA: Si cambia de clave o pulsa el botón
+# DISPARADOR DE CARGA
 if btn_acceder or "ultima_clave" not in st.session_state:
     st.session_state.ultima_clave = clave_input
     pack_datos = cargar_datos_db(clave_input)
@@ -140,7 +135,10 @@ if btn_acceder or "ultima_clave" not in st.session_state:
             "fincas_usuario": [{"Nombre": "Ático Alicante Centro", "Catastro": "9872023VH5797S0001WX", "Valor": 250000.0}],
             "pensiones_usuario": [{"Nombre": "401k USA Plan", "Valor": 45000.0}, {"Nombre": "Workplace Pension UK", "Valor": 28000.0}],
             "otros_activos_usuario": [{"Nombre": "Vehículo Familiar", "Valor": 24500.0}],
-            "deudas_usuario": [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}]
+            "deudas_usuario": [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}],
+            "analitica_inmuebles": {},
+            "planificacion_pensiones": {},
+            "gastos_vida_base": 1800.0
         }
     
     st.session_state.salario_base_input = float(pack_datos.get("salario_base", 3200.0))
@@ -150,6 +148,12 @@ if btn_acceder or "ultima_clave" not in st.session_state:
     st.session_state.pensiones_usuario = pack_datos.get("pensiones_usuario", [])
     st.session_state.otros_activos_usuario = pack_datos.get("otros_activos_usuario", [])
     st.session_state.deudas_usuario = pack_datos.get("deudas_usuario", [])
+    
+    # Carga de la memoria específica de la Tab 2
+    st.session_state.analitica_inmuebles = pack_datos.get("analitica_inmuebles", {})
+    st.session_state.planificacion_pensiones = pack_datos.get("planificacion_pensiones", {})
+    st.session_state.gastos_vida_base_input = float(pack_datos.get("gastos_vida_base", 1800.0))
+    
     st.session_state.db_data = pack_datos
     st.rerun()
 
@@ -190,7 +194,6 @@ with tab_balance:
 
     with col_izquierda:
         st.header("📥 Entrada de Partidas")
-        
         st.subheader("🪙 1. Liquidez de Base")
         c_div1, c_div2 = st.columns([2, 3])
         nueva_divisa = c_div1.selectbox("Añadir divisa extra", ["USD", "GBP", "CHF", "CAD", "AUD", "JPY"])
@@ -284,7 +287,7 @@ with tab_balance:
         st.divider()
         st.subheader("🛡️ 4. Planes de Pensiones")
         with st.form("form_pensiones"):
-            n_p = st.text_input("Nombre del Plan", placeholder="Ej. 401k USA")
+            n_p = st.text_input("Nombre del Plan")
             v_p = st.number_input("Valor de Mercado actual (€)", min_value=0.0, step=1000.0)
             if st.form_submit_button("➕ Agregar Plan") and n_p:
                 st.session_state.pensiones_usuario.append({"Nombre": n_p, "Valor": float(v_p)})
@@ -337,7 +340,8 @@ with tab_balance:
         if c_rec.button("🔄 Recalcular Todo el Balance", type="primary", use_container_width=True):
             st.rerun()
         
-        if c_sav.button("💾 Guardar Datos en la Nube", type="secondary", use_container_width=True):
+        if c_sav.button("💾 Guardar Datos en la Nube", type="secondary", use_container_width=True, key="save_tab1"):
+            # RECOLECCIÓN INTEGRAL DE AMBAS PESTAÑAS
             paquete_completo = {
                 "salario_base": float(st.session_state.get("salario_base_input", 3200.0)),
                 "efectivo_divisas": st.session_state.efectivo_divisas,
@@ -345,7 +349,11 @@ with tab_balance:
                 "fincas_usuario": st.session_state.fincas_usuario,
                 "pensiones_usuario": st.session_state.pensiones_usuario,
                 "otros_activos_usuario": st.session_state.otros_activos_usuario,
-                "deudas_usuario": st.session_state.deudas_usuario
+                "deudas_usuario": st.session_state.deudas_usuario,
+                # Salvamos el estado dinámico de la Tab 2
+                "analitica_inmuebles": st.session_state.get("analitica_inmuebles", {}),
+                "planificacion_pensiones": st.session_state.get("planificacion_pensiones", {}),
+                "gastos_vida_base": float(st.session_state.get("gastos_vida_base_input", 1800.0))
             }
             guardar_datos_db(paquete_completo, clave_usuario)
             st.session_state.db_data = paquete_completo
@@ -362,54 +370,6 @@ with tab_balance:
             fig.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, height=240, margin=dict(t=10, b=10, l=10, r=10))
             st.plotly_chart(fig, use_container_width=True)
 
-        st.divider()
-        col_act_d, col_pas_d = st.columns(2)
-        with col_act_d:
-            st.subheader("🟢 Detalle Estructural de Activos")
-            st.markdown(f"• **Líquido Base Consolidado:** `{int(categoria_cash):,} €` ({pct_cash:.1f}%)")
-            for div, m in st.session_state.efectivo_divisas.items():
-                if m > 0: st.markdown(f"  - _Cuenta:_ {m:,} {div}")
-            st.markdown(f"• **Portafolio de Bolsa:** `{int(total_bolsa):,} €`")
-            for linea in desglose_acciones: st.markdown(linea)
-            st.markdown(f"• **Fondos de Previsión / Pensiones:** `{int(categoria_pensiones):,} €`")
-            st.markdown(f"• **Patrimonio Inmobiliario:** `{int(categoria_inmobiliario):,} €`")
-            st.markdown(f"• **Otros Bienes Físicos:** `{int(categoria_otros):,} €`")
-                
-        with col_pas_d:
-            st.subheader("🔴 Detalle Estructural de Pasivos")
-            st.markdown(f"• **Obligaciones Financieras Totales:** `{int(pasivo_total):,} €`")
-            for d in st.session_state.deudas_usuario:
-                st.markdown(f"  - 💸 _{d['Nombre']}_: `{int(d['Valor']):,} €`")
-
-        st.divider()
-        st.subheader("🎯 Radar de Rebalanceo de Activos")
-        c_rb1, c_rb2 = st.columns(2)
-        target_cash = c_rb1.slider("% Cash Objetivo", 0, 100, 20)
-        target_inm = c_rb2.slider("% Inmobiliario Objetivo", 0, 100, 40)
-        target_bolsa = 100 - (target_cash + target_inm)
-        
-        st.info(f"**Asignación Objetivo:** {target_cash}% Cash | {target_inm}% Inmobiliario | {target_bolsa}% Bolsa y Pensiones/Otros")
-        
-        val_target_cash = activo_total * (target_cash / 100)
-        val_target_inm = activo_total * (target_inm / 100)
-        val_target_bolsa = activo_total * (target_bolsa / 100)
-        
-        diff_cash = categoria_cash - val_target_cash
-        diff_inm = categoria_inmobiliario - val_target_inm
-        diff_bolsa = (total_bolsa + categoria_pensiones + categoria_otros) - val_target_bolsa
-        
-        def format_alert(diferencia, nombre):
-            if diferencia < -1000:
-                st.warning(f"⚠️ **Déficit en {nombre}:** Te faltan `{int(abs(diferencia)):,} €` para cumplir tu objetivo.")
-            elif diferencia > 1000:
-                st.success(f"💰 **Superávit en {nombre}:** Tienes un exceso de `{int(diferencia):,} €`. Capital disponible para reasignar.")
-            else:
-                st.info(f"✅ **{nombre} equilibrado.** En rango objetivo.")
-
-        format_alert(diff_cash, "Cash")
-        format_alert(diff_inm, "Inmobiliario")
-        format_alert(diff_bolsa, "Bolsa / Pensiones")
-
 # =====================================================================
 # PESTAÑA 2: PROYECCIÓN DINÁMICA AVANZADA & MATRIX MULTIANUAL
 # =====================================================================
@@ -421,15 +381,31 @@ with tab_proyeccion:
     with col_flujos:
         st.markdown("### 🏢 Módulo de Rendimiento Inmobiliario")
         total_rentas_pasivas_inmo = 0.0
+        
+        # Recuperamos o inicializamos el almacén de flujos inmobiliarios de la Tab 2
+        if "analitica_inmuebles" not in st.session_state:
+            st.session_state.analitica_inmuebles = {}
+            
         if not st.session_state.fincas_usuario:
             st.caption("⚠️ No hay inmuebles en la Pestaña 1.")
         else:
             for f in st.session_state.fincas_usuario:
-                with st.expander(f"🏢 Analítica: {f['Nombre']}", expanded=True):
+                nombre_finca = f['Nombre']
+                # Sub-diccionario para esta propiedad específica
+                if nombre_finca not in st.session_state.analitica_inmuebles:
+                    st.session_state.analitica_inmuebles[nombre_finca] = {"alq": 900.0, "gto": 150.0, "hip": 350.0}
+                
+                res_f = st.session_state.analitica_inmuebles[nombre_finca]
+                
+                with st.expander(f"🏢 Analítica: {nombre_finca}", expanded=True):
                     c_in1, c_in2, c_in3 = st.columns(3)
-                    ing_alq = c_in1.number_input("Alquiler/mes (€)", min_value=0.0, value=900.0, key=f"alq_{f['Nombre']}", step=50.0)
-                    gto_fijo = c_in2.number_input("Gastos fijos/mes (€)", min_value=0.0, value=150.0, key=f"gto_{f['Nombre']}", step=25.0)
-                    cuota_hip = c_in3.number_input("Cuota Hipoteca/mes (€)", min_value=0.0, value=350.0, key=f"hip_{f['Nombre']}", step=50.0)
+                    ing_alq = c_in1.number_input("Alquiler/mes (€)", min_value=0.0, value=float(res_f.get("alq", 900.0)), key=f"alq_{nombre_finca}", step=50.0)
+                    gto_fijo = c_in2.number_input("Gastos fijos/mes (€)", min_value=0.0, value=float(res_f.get("gto", 150.0)), key=f"gto_{nombre_finca}", step=25.0)
+                    cuota_hip = c_in3.number_input("Cuota Hipoteca/mes (€)", min_value=0.0, value=float(res_f.get("hip", 350.0)), key=f"hip_{nombre_finca}", step=50.0)
+                    
+                    # Consolidamos en caliente en la memoria persistente
+                    st.session_state.analitica_inmuebles[nombre_finca] = {"alq": ing_alq, "gto": gto_fijo, "hip": cuota_hip}
+                    
                     cashflow_neto_mensual = ing_alq - gto_fijo - cuota_hip
                     total_rentas_pasivas_inmo += cashflow_neto_mensual
 
@@ -448,19 +424,34 @@ with tab_proyeccion:
         st.markdown("### 🛡️ Planificación Activa de Pensiones")
         total_aportacion_mensual_pensiones = 0.0
         total_anual_deducible_pensiones_usuario = 0.0
+        
+        if "planificacion_pensiones" not in st.session_state:
+            st.session_state.planificacion_pensiones = {}
+            
         if st.session_state.pensiones_usuario:
             for p in st.session_state.pensiones_usuario:
-                with st.expander(f"💼 Planificación: {p['Nombre']}", expanded=True):
+                nombre_plan = p['Nombre']
+                if nombre_plan not in st.session_state.planificacion_pensiones:
+                    st.session_state.planificacion_pensiones[nombre_plan] = {"user": 250.0, "employer": 250.0}
+                    
+                res_p = st.session_state.planificacion_pensiones[nombre_plan]
+                
+                with st.expander(f"💼 Planificación: {nombre_plan}", expanded=True):
                     c_pen1, c_pen2 = st.columns(2)
-                    aport_user = c_pen1.number_input("Tu aportación/mes (€)", min_value=0.0, value=250.0, key=f"p_user_{p['Nombre']}", step=50.0)
-                    aport_employer = c_pen2.number_input("Empleador/mes (€)", min_value=0.0, value=250.0, key=f"p_emp_{p['Nombre']}", step=50.0)
+                    aport_user = c_pen1.number_input("Tu aportación/mes (€)", min_value=0.0, value=float(res_p.get("user", 250.0)), key=f"p_user_{nombre_plan}", step=50.0)
+                    aport_employer = c_pen2.number_input("Empleador/mes (€)", min_value=0.0, value=float(res_p.get("employer", 250.0)), key=f"p_emp_{nombre_plan}", step=50.0)
+                    
+                    st.session_state.planificacion_pensiones[nombre_plan] = {"user": aport_user, "employer": aport_employer}
+                    
                     total_aportacion_mensual_pensiones += (aport_user + aport_employer)
                     total_anual_deducible_pensiones_usuario += (aport_user * 12)
 
         st.subheader("🟢 Otros Ingresos & Gastos Base")
         salario_neto_base = st.number_input("Salario Neto Base Mensual (€)", min_value=0.0, value=float(st.session_state.get("salario_base_input", 3200.0)), key="salario_base_input_main", step=100.0)
         st.session_state.salario_base_input = salario_neto_base
-        gastos_vida_base = st.number_input("Gastos de Vida Base Mensuales (€)", min_value=0.0, value=1800.0, step=100.0)
+        
+        gastos_vida_base = st.number_input("Gastos de Vida Base Mensuales (€)", min_value=0.0, value=float(st.session_state.get("gastos_vida_base_input", 1800.0)), key="gastos_vida_base_input", step=100.0)
+        st.session_state.gastos_vida_base_input = gastos_vida_base
         
         st.divider()
         ahorro_mensual_inicial = (salario_neto_base + total_rentas_pasivas_inmo + total_dividendos_mensuales_bolsa) - gastos_vida_base
@@ -486,6 +477,25 @@ with tab_proyeccion:
 
     with col_simulacion:
         st.subheader("🚀 Parámetros Globales y Simulación Temporal")
+        
+        # EL NUEVO BOTÓN DUPLICADO EN LA TAB 2 PARA GUARDAR AL INSTANTE
+        if st.button("💾 Guardar Cambios de Flujos en la Nube", type="primary", use_container_width=True, key="save_tab2"):
+            paquete_completo = {
+                "salario_base": float(st.session_state.salario_base_input),
+                "efectivo_divisas": st.session_state.efectivo_divisas,
+                "cartera_usuario": st.session_state.cartera_usuario,
+                "fincas_usuario": st.session_state.fincas_usuario,
+                "pensiones_usuario": st.session_state.pensiones_usuario,
+                "otros_activos_usuario": st.session_state.otros_activos_usuario,
+                "deudas_usuario": st.session_state.deudas_usuario,
+                "analitica_inmuebles": st.session_state.analitica_inmuebles,
+                "planificacion_pensiones": st.session_state.planificacion_pensiones,
+                "gastos_vida_base": float(st.session_state.gastos_vida_base_input)
+            }
+            guardar_datos_db(paquete_completo, clave_usuario)
+            st.session_state.db_data = paquete_completo
+            
+        st.divider()
         c_p1, c_p2, c_p3, c_p4, c_p5 = st.columns(5)
         años_sim = c_p1.slider("Años de proyección", 1, 25, 12)
         rent_bolsa = c_p2.slider("Bolsa (%)", 0, 15, 8)
@@ -532,7 +542,6 @@ with tab_proyeccion:
             
             factor_deflactor = (1 + (pct_inflacion / 100)) ** idx
             
-            # Almacenamos los flujos de caja reales deflactados para el Gráfico 2
             h_cf_ahorro_metalico.append(max(0.0, salario_recibido) / factor_deflactor)
             h_cf_dividendos.append(dividendos_recibidos / factor_deflactor)
             h_cf_rentas_inmo.append(max(0.0, rentas_recibidas) / factor_deflactor)
@@ -570,7 +579,7 @@ with tab_proyeccion:
         if mes_cruze != -1:
             st.success(f"💎 **Hito de Independencia Financiera Estimado:** Alcanzarás tu Número FI en el año **{hist_anios[mes_cruze]}** (dentro de {mes_cruze+1} años).")
         
-        # --- GRÁFICO 1: EVOLUCIÓN ESTRUCTURAL ---
+        # --- GRÁFICOS ---
         fig_sim = go.Figure()
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_cash, mode='lines', name='💼 Cash / Liquidez', stackgroup='one', line=dict(color='#60A5FA', width=0.5)))
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_bolsa, mode='lines', name='📈 Cartera Bolsa', stackgroup='one', line=dict(color='#A78BFA', width=0.5)))
@@ -592,9 +601,6 @@ with tab_proyeccion:
 
         st.divider()
 
-        # =====================================================================
-        # --- CORREGIDO: RESTAURADO EL GRÁFICO 2 DE FLUJOS DE CAJA ---
-        # =====================================================================
         fig_bar_cf = go.Figure()
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_ahorro_metalico, name='🪙 Salario / Ingresos Activos', marker_color='#2563EB')
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_rentas_inmo, name='🏠 Rentas Inmobiliarias Netas', marker_color='#10B981')
