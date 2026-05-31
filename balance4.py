@@ -68,16 +68,6 @@ except Exception as e:
     st.error("Error de conexión con los Secrets de Supabase.")
     st.stop()
 
-# =====================================================================
-# --- INTERFAZ DE AUTENTICACIÓN DINÁMICA ---
-# =====================================================================
-st.sidebar.header("🔑 Seguridad de Capas")
-clave_usuario = st.sidebar.text_input("Clave de Acceso Patrimonial", value="Principal", type="password").strip()
-
-if not clave_usuario:
-    st.warning("🔒 Introduce una Clave de Acceso en el panel lateral para activar el ERP.")
-    st.stop()
-
 # Funciones core de lectura y escritura
 def cargar_datos_db(escenario):
     try:
@@ -103,12 +93,21 @@ def guardar_datos_db(datos_nuevos, escenario):
     except Exception as e:
         st.error(f"Error al sincronizar con la nube: {e}")
 
-# CONTROL DE CAMBIO DE USUARIO RADICAL: Si cambia la clave, borramos los estados temporales previos
-if "ultima_clave" not in st.session_state or st.session_state.ultima_clave != clave_usuario:
-    st.session_state.ultima_clave = clave_usuario
-    datos_db = cargar_datos_db(clave_usuario)
+# =====================================================================
+# --- FORMULARIO LATERAL DE ACCESO (BOTÓN FÍSICO INTEGRADO) ---
+# =====================================================================
+st.sidebar.header("🔑 Seguridad de Capas")
+
+with st.sidebar.form("form_autenticacion"):
+    clave_input = st.text_input("Clave de Acceso Patrimonial", value=st.session_state.get("ultima_clave", "Principal"), type="password").strip()
+    btn_acceder = st.form_submit_button("🔓 Cargar / Forzar Datos", use_container_width=True)
+
+# Si el usuario hunde el botón o no existe clave guardada todavía en la sesión, disparamos la sincronización
+if btn_acceder or "ultima_clave" not in st.session_state:
+    st.session_state.ultima_clave = clave_input
+    datos_db = cargar_datos_db(clave_input)
     
-    # Si no existen datos en la nube para esa clave, cargamos el respaldo inicial limpio
+    # Si la clave no tiene datos en tu Supabase, le asignamos la plantilla de respaldo inicial
     if not datos_db:
         datos_db = {
             "salario_base": 3200, "liquidez": 15450, 
@@ -116,7 +115,7 @@ if "ultima_clave" not in st.session_state or st.session_state.ultima_clave != cl
             "valor_inmuebles": 250000, "otros_activos": 24500
         }
     
-    # Forzamos la actualización inmediata de la memoria activa de los inputs
+    # Guardamos la foto real en el estado de memoria para los inputs
     st.session_state.efectivo_divisas = {"EUR": float(datos_db.get("liquidez", 15450))}
     st.session_state.cartera_usuario = {
         "PBR": {"unidades": float(datos_db.get("unidades_pbr", 15)), "precio_compra": 12.50},
@@ -134,6 +133,8 @@ if "ultima_clave" not in st.session_state or st.session_state.ultima_clave != cl
     st.session_state.db_data = datos_db
     st.rerun()
 
+# Recuperamos la clave activa definitiva de la sesión
+clave_usuario = st.session_state.ultima_clave
 db = st.session_state.db_data
 
 if "plusvalia_bolsa_real" not in st.session_state:
@@ -311,7 +312,7 @@ with tab_balance:
                 st.session_state.deudas_usuario.pop(idx); st.rerun()
 
     with col_derecha:
-        st.header("🏛️ Tu Balance de Situación Global")
+        st.header(f"🏛️ Tu Balance de Situación Global [{clave_usuario}]")
         activo_total = categoria_cash + total_bolsa + categoria_pensiones + categoria_inmobiliario + categoria_otros
         patrimonio_neto = activo_total - pasivo_total
         pct_cash = (categoria_cash / activo_total * 100) if activo_total > 0 else 0.0
@@ -441,7 +442,9 @@ with tab_proyeccion:
                     total_anual_deducible_pensiones_usuario += (aport_user * 12)
 
         st.subheader("🟢 Otros Ingresos & Gastos Base")
-        salario_neto_base = st.number_input("Salario Neto Base Mensual (€)", min_value=0.0, value=float(db.get("salario_base", 3200)), key="salario_base_input", step=100.0)
+        salario_neto_base = st.number_input("Salario Neto Base Mensual (€)", min_value=0.0, value=float(st.session_state.get("salario_base_input", 3200)), key="salario_base_input_main", step=100.0)
+        # Sincronizamos el estado interno por si el usuario cambia el salario en la pantalla principal
+        st.session_state.salario_base_input = salario_neto_base
         gastos_vida_base = st.number_input("Gastos de Vida Base Mensuales (€)", min_value=0.0, value=1800.0, step=100.0)
         
         st.divider()
