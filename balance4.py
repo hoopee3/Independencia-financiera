@@ -8,7 +8,7 @@ from supabase import create_client, Client
 # 1. Configuración de la página web (Ancho completo e interfaz fluida)
 st.set_page_config(page_title="Mi ERP Financiero Pro", page_icon="📊", layout="wide")
 
-# --- ESTILOS PERSONALIZADOS ACTUALIZADOS (Pestañas claras y sin fondo oscuro) ---
+# --- ESTILOS PERSONALIZADOS (Pestañas claras y sin fondo oscuro) ---
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
@@ -40,7 +40,7 @@ st.markdown("""
     /* Botones de navegación de pestañas (Tabs) en color claro/blanco */
     .stTabs [data-baseweb="tab-list"] { 
         gap: 10px; 
-        background-color: transparent !important; /* QUITADO EL FONDO NEGRO DE ATRÁS */
+        background-color: transparent !important; /* Quitado el fondo negro de atrás */
         padding: 6px 0px;
     }
     .stTabs [data-baseweb="tab"] { 
@@ -56,7 +56,7 @@ st.markdown("""
         background-color: #d8dee9;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #88c0d0 !important; /* Turquesa/Azul claro para destacar la pestaña activa */
+        background-color: #88c0d0 !important; /* Turquesa para destacar la pestaña activa */
         color: #2e3440 !important;
         box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     }
@@ -76,19 +76,24 @@ except Exception as e:
     st.error("Error de conexión con los Secrets de Supabase. Verifica la configuración.")
     st.stop()
 
-# 3. Funciones core de lectura y escritura en la nube
+# 3. Funciones core de lectura y escritura en la nube (Corregidas y Blindadas)
 def cargar_datos_db():
     try:
         response = supabase.table("erp_balance").select("*").eq("nombre_escenario", "Principal").execute()
         if response.data:
             return response.data[0]
-    except:
+    except Exception as e:
         pass
     return None
 
 def guardar_datos_db(datos_nuevos):
     try:
-        supabase.table("erp_balance").update(datos_nuevos).eq("nombre_escenario", "Principal").execute()
+        # Copiamos el diccionario e inyectamos el nombre de columna correcto en español
+        payload = datos_nuevos.copy()
+        payload["nombre_escenario"] = "Principal"
+        
+        # El comando upsert actualiza si ya existe la fila, o la inserta si se borrase
+        supabase.table("erp_balance").upsert(payload, on_conflict="nombre_escenario").execute()
         st.toast("¡Copia de seguridad guardada en Supabase Cloud! 🚀", icon="💾")
     except Exception as e:
         st.error(f"Error al sincronizar con la nube: {e}")
@@ -563,7 +568,7 @@ with tab_proyeccion:
         if mes_cruze != -1:
             st.success(f"💎 **Hito de Independencia Financiera Estimado:** Alcanzarás tu Número FI en el año **{hist_anios[mes_cruze]}** (dentro de {mes_cruze+1} años).")
         
-        # --- GRÁFICO 1 AJUSTADO: TÍTULO EN 2 LÍNEAS Y MÁS MARGEN (t=110) ---
+        # --- GRÁFICO 1 TÍTULO COMPACTO EN 2 LÍNEAS (t=110) ---
         fig_sim = go.Figure()
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_cash, mode='lines', name='💼 Cash / Liquidez', stackgroup='one', line=dict(color='#60A5FA', width=0.5)))
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_bolsa, mode='lines', name='📈 Cartera Bolsa', stackgroup='one', line=dict(color='#A78BFA', width=0.5)))
@@ -576,7 +581,7 @@ with tab_proyeccion:
         fig_sim.update_layout(
             template="plotly_dark", 
             title=dict(text="Trayectoria Patrimonial Compuesta<br>vs Meta de Independencia Financiera", y=0.96, x=0.5, xanchor="center"),
-            margin=dict(t=110, b=160, l=40, r=40), # Subido t a 110 para dar espacio a las 2 líneas sin invadir la gráfica
+            margin=dict(t=110, b=160, l=40, r=40), 
             xaxis_title="Año", yaxis_title="Euros (€)",
             legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5),
             height=520
@@ -585,7 +590,7 @@ with tab_proyeccion:
 
         st.divider()
 
-        # --- GRÁFICO 2 AJUSTADO: TÍTULO EN 2 LÍNEAS Y MÁS MARGEN (t=110) ---
+        # --- GRÁFICO 2 TÍTULO COMPACTO EN 2 LÍNEAS (t=110) ---
         fig_bar_cf = go.Figure()
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_ahorro_metalico, name='🪙 Salario / Ingresos Activos', marker_color='#2563EB')
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_rentas_inmo, name='🏠 Rentas Inmobiliarias Netas', marker_color='#10B981')
@@ -597,7 +602,7 @@ with tab_proyeccion:
             barmode='stack',
             template="plotly_dark",
             title=dict(text="Análisis de Flujos de Caja Anuales Reales<br>(Ajustados a Inflación & Retorno Compuesto)", y=0.96, x=0.5, xanchor="center"),
-            margin=dict(t=110, b=160, l=40, r=40), # Subido t a 110 para dar espacio libre al título
+            margin=dict(t=110, b=160, l=40, r=40),
             xaxis_title="Año",
             yaxis_title="Flujo de Efectivo Real (€ / año)",
             legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5),
