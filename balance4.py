@@ -8,7 +8,7 @@ from supabase import create_client, Client
 # 1. Configuración de la página web (Ancho completo e interfaz fluida)
 st.set_page_config(page_title="Mi ERP Financiero Pro", page_icon="📊", layout="wide")
 
-# --- ESTILOS PERSONALIZADOS ACTUALIZADOS (Pestañas claras y tarjetas legibles) ---
+# --- ESTILOS PERSONALIZADOS ACTUALIZADOS (Pestañas claras y sin fondo oscuro) ---
 st.markdown("""
     <style>
     .main { background-color: #0e1117; }
@@ -40,12 +40,11 @@ st.markdown("""
     /* Botones de navegación de pestañas (Tabs) en color claro/blanco */
     .stTabs [data-baseweb="tab-list"] { 
         gap: 10px; 
-        background-color: #1e222b;
-        padding: 6px 10px;
-        border-radius: 8px;
+        background-color: transparent !important; /* QUITADO EL FONDO NEGRO DE ATRÁS */
+        padding: 6px 0px;
     }
     .stTabs [data-baseweb="tab"] { 
-        padding: 10px 20px; 
+        padding: 10px 16px; 
         background-color: #eceff4; /* Blanco/Gris muy claro de base */
         border-radius: 6px;
         color: #2e3440 !important; /* Texto oscuro para contraste radical */
@@ -57,7 +56,7 @@ st.markdown("""
         background-color: #d8dee9;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #88c0d0 !important; /* Azul claro para destacar la pestaña activa */
+        background-color: #88c0d0 !important; /* Turquesa/Azul claro para destacar la pestaña activa */
         color: #2e3440 !important;
         box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     }
@@ -143,8 +142,8 @@ st.title("📊 Mi Panel de Control Contable & Proyección Global")
 
 # --- PESTAÑAS CONTABLES ---
 tab_balance, tab_proyeccion, tab_fiscalidad = st.tabs([
-    "🏛️ Balance & Radar de Rebalanceo", 
-    "📈 Proyección por Capas & Estrés", 
+    "🏛️ Balance & Radar", 
+    "📈 Proyección & Estrés", 
     "📑 Tax Alpha e Impuestos"
 ])
 
@@ -564,7 +563,7 @@ with tab_proyeccion:
         if mes_cruze != -1:
             st.success(f"💎 **Hito de Independencia Financiera Estimado:** Alcanzarás tu Número FI en el año **{hist_anios[mes_cruze]}** (dentro de {mes_cruze+1} años).")
         
-        # --- GRÁFICO 1 AJUSTADO: LEYENDA SEPARADA ABAJO BAJO ---
+        # --- GRÁFICO 1 AJUSTADO: TÍTULO EN 2 LÍNEAS Y MÁS MARGEN (t=110) ---
         fig_sim = go.Figure()
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_cash, mode='lines', name='💼 Cash / Liquidez', stackgroup='one', line=dict(color='#60A5FA', width=0.5)))
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_bolsa, mode='lines', name='📈 Cartera Bolsa', stackgroup='one', line=dict(color='#A78BFA', width=0.5)))
@@ -576,9 +575,8 @@ with tab_proyeccion:
         
         fig_sim.update_layout(
             template="plotly_dark", 
-            title=dict(text="Trayectoria Patrimonial Compuesta vs Meta de Independencia Financiera", y=0.96, x=0.5, xanchor="center"),
-            # Añadimos margen inferior drástico (b=160) y bajamos el offset de la leyenda (y=-0.55) para que no invada el eje X
-            margin=dict(t=80, b=160, l=40, r=40), 
+            title=dict(text="Trayectoria Patrimonial Compuesta<br>vs Meta de Independencia Financiera", y=0.96, x=0.5, xanchor="center"),
+            margin=dict(t=110, b=160, l=40, r=40), # Subido t a 110 para dar espacio a las 2 líneas sin invadir la gráfica
             xaxis_title="Año", yaxis_title="Euros (€)",
             legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5),
             height=520
@@ -587,7 +585,7 @@ with tab_proyeccion:
 
         st.divider()
 
-        # --- GRÁFICO 2 AJUSTADO: LEYENDA SEPARADA ABAJO BAJO ---
+        # --- GRÁFICO 2 AJUSTADO: TÍTULO EN 2 LÍNEAS Y MÁS MARGEN (t=110) ---
         fig_bar_cf = go.Figure()
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_ahorro_metalico, name='🪙 Salario / Ingresos Activos', marker_color='#2563EB')
         fig_bar_cf.add_bar(x=hist_anios, y=h_cf_rentas_inmo, name='🏠 Rentas Inmobiliarias Netas', marker_color='#10B981')
@@ -598,8 +596,8 @@ with tab_proyeccion:
         fig_bar_cf.update_layout(
             barmode='stack',
             template="plotly_dark",
-            title=dict(text="Análisis de Flujos de Caja Anuales Reales (Ajustados a Inflación & Retorno Compuesto)", y=0.96, x=0.5, xanchor="center"),
-            margin=dict(t=80, b=160, l=40, r=40),
+            title=dict(text="Análisis de Flujos de Caja Anuales Reales<br>(Ajustados a Inflación & Retorno Compuesto)", y=0.96, x=0.5, xanchor="center"),
+            margin=dict(t=110, b=160, l=40, r=40), # Subido t a 110 para dar espacio libre al título
             xaxis_title="Año",
             yaxis_title="Flujo de Efectivo Real (€ / año)",
             legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5),
