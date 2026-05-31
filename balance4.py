@@ -89,7 +89,6 @@ def cargar_datos_db(escenario):
                     "pensiones_usuario": [{"Nombre": "401k USA Plan", "Valor": 45000.0}, {"Nombre": "Workplace Pension UK", "Valor": 28000.0}],
                     "otros_activos_usuario": [{"Nombre": "Vehículo Familiar", "Valor": float(registro.get("otros_activos", 24500))}],
                     "deudas_usuario": [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}],
-                    # Valores por defecto para la Tab 2 si viene de un registro viejo
                     "analitica_inmuebles": {},
                     "planificacion_pensiones": {},
                     "gastos_vida_base": 1800.0
@@ -118,7 +117,18 @@ def guardar_datos_db(paquete_total, escenario):
     except Exception as e:
         st.error(f"Error al sincronizar con la nube: {e}")
 
-# DISPARADOR DE CARGA
+# =====================================================================
+# --- PRIMERO: CREAR EL FORMULARIO LATERAL (EVITA EL NAMEERROR) ---
+# =====================================================================
+st.sidebar.header("🔑 Seguridad de Capas")
+
+with st.sidebar.form("form_autenticacion"):
+    clave_input = st.text_input("Clave de Acceso Patrimonial", value=st.session_state.get("ultima_clave", "Principal"), type="password").strip()
+    btn_acceder = st.form_submit_button("🔓 Cargar / Forzar Datos", use_container_width=True)
+
+# =====================================================================
+# --- SEGUNDO: DISPARADOR DE CONTROL DE SESIÓN ---
+# =====================================================================
 if btn_acceder or "ultima_clave" not in st.session_state:
     st.session_state.ultima_clave = clave_input
     pack_datos = cargar_datos_db(clave_input)
@@ -149,7 +159,6 @@ if btn_acceder or "ultima_clave" not in st.session_state:
     st.session_state.otros_activos_usuario = pack_datos.get("otros_activos_usuario", [])
     st.session_state.deudas_usuario = pack_datos.get("deudas_usuario", [])
     
-    # Carga de la memoria específica de la Tab 2
     st.session_state.analitica_inmuebles = pack_datos.get("analitica_inmuebles", {})
     st.session_state.planificacion_pensiones = pack_datos.get("planificacion_pensiones", {})
     st.session_state.gastos_vida_base_input = float(pack_datos.get("gastos_vida_base", 1800.0))
@@ -341,7 +350,6 @@ with tab_balance:
             st.rerun()
         
         if c_sav.button("💾 Guardar Datos en la Nube", type="secondary", use_container_width=True, key="save_tab1"):
-            # RECOLECCIÓN INTEGRAL DE AMBAS PESTAÑAS
             paquete_completo = {
                 "salario_base": float(st.session_state.get("salario_base_input", 3200.0)),
                 "efectivo_divisas": st.session_state.efectivo_divisas,
@@ -350,7 +358,6 @@ with tab_balance:
                 "pensiones_usuario": st.session_state.pensiones_usuario,
                 "otros_activos_usuario": st.session_state.otros_activos_usuario,
                 "deudas_usuario": st.session_state.deudas_usuario,
-                # Salvamos el estado dinámico de la Tab 2
                 "analitica_inmuebles": st.session_state.get("analitica_inmuebles", {}),
                 "planificacion_pensiones": st.session_state.get("planificacion_pensiones", {}),
                 "gastos_vida_base": float(st.session_state.get("gastos_vida_base_input", 1800.0))
@@ -382,7 +389,6 @@ with tab_proyeccion:
         st.markdown("### 🏢 Módulo de Rendimiento Inmobiliario")
         total_rentas_pasivas_inmo = 0.0
         
-        # Recuperamos o inicializamos el almacén de flujos inmobiliarios de la Tab 2
         if "analitica_inmuebles" not in st.session_state:
             st.session_state.analitica_inmuebles = {}
             
@@ -391,7 +397,6 @@ with tab_proyeccion:
         else:
             for f in st.session_state.fincas_usuario:
                 nombre_finca = f['Nombre']
-                # Sub-diccionario para esta propiedad específica
                 if nombre_finca not in st.session_state.analitica_inmuebles:
                     st.session_state.analitica_inmuebles[nombre_finca] = {"alq": 900.0, "gto": 150.0, "hip": 350.0}
                 
@@ -403,7 +408,6 @@ with tab_proyeccion:
                     gto_fijo = c_in2.number_input("Gastos fijos/mes (€)", min_value=0.0, value=float(res_f.get("gto", 150.0)), key=f"gto_{nombre_finca}", step=25.0)
                     cuota_hip = c_in3.number_input("Cuota Hipoteca/mes (€)", min_value=0.0, value=float(res_f.get("hip", 350.0)), key=f"hip_{nombre_finca}", step=50.0)
                     
-                    # Consolidamos en caliente en la memoria persistente
                     st.session_state.analitica_inmuebles[nombre_finca] = {"alq": ing_alq, "gto": gto_fijo, "hip": cuota_hip}
                     
                     cashflow_neto_mensual = ing_alq - gto_fijo - cuota_hip
@@ -478,7 +482,6 @@ with tab_proyeccion:
     with col_simulacion:
         st.subheader("🚀 Parámetros Globales y Simulación Temporal")
         
-        # EL NUEVO BOTÓN DUPLICADO EN LA TAB 2 PARA GUARDAR AL INSTANTE
         if st.button("💾 Guardar Cambios de Flujos en la Nube", type="primary", use_container_width=True, key="save_tab2"):
             paquete_completo = {
                 "salario_base": float(st.session_state.salario_base_input),
