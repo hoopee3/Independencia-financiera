@@ -83,11 +83,9 @@ def cargar_datos_db(escenario):
         response = supabase.table("erp_balance").select("*").eq("nombre_escenario", escenario).execute()
         if response.data:
             registro = response.data[0]
-            # Si tiene guardado el paquete JSON completo, lo priorizamos
             if "datos_completos" in registro and registro["datos_completos"]:
                 return registro["datos_completos"]
             else:
-                # Si es un registro viejo de la tabla antigua, mapeamos la compatibilidad
                 return {
                     "salario_base": float(registro.get("salario_base", 3200)),
                     "efectivo_divisas": {"EUR": float(registro.get("liquidez", 15450))},
@@ -107,13 +105,12 @@ def cargar_datos_db(escenario):
 
 def guardar_datos_db(paquete_total, escenario):
     try:
-        # Estructuramos el payload enviando los datos fijos de respaldo y el JSON integral
         payload = {
             "nombre_escenario": escenario,
             "salario_base": float(paquete_total.get("salario_base", 3200)),
             "liquidez": float(paquete_total["efectivo_divisas"].get("EUR", 0.0)),
             "valor_inmuebles": float(sum(f['Valor'] for f in paquete_total.get("fincas_usuario", []))),
-            "datos_completos": paquete_total # <--- AQUÍ SE GUARDA ABSOLUTAMENTE TODO EL PAQUETE DINÁMICO
+            "datos_completos": paquete_total
         }
         
         check = supabase.table("erp_balance").select("id").eq("nombre_escenario", escenario).execute()
@@ -126,12 +123,11 @@ def guardar_datos_db(paquete_total, escenario):
     except Exception as e:
         st.error(f"Error al sincronizar con la nube: {e}")
 
-# DISPARADOR DE CARGA: Si el usuario pulsa el botón o cambia de clave de sesión
+# DISPARADOR DE CARGA: Si cambia de clave o pulsa el botón
 if btn_acceder or "ultima_clave" not in st.session_state:
     st.session_state.ultima_clave = clave_input
     pack_datos = cargar_datos_db(clave_input)
     
-    # Plantilla inicial estandarizada por si la cuenta es totalmente nueva
     if not pack_datos:
         pack_datos = {
             "salario_base": 3200.0,
@@ -147,7 +143,6 @@ if btn_acceder or "ultima_clave" not in st.session_state:
             "deudas_usuario": [{"Nombre": "Hipoteca Principal", "Valor": 120000.0}]
         }
     
-    # Inyectamos de forma limpia el paquete completo en la memoria del estado de Streamlit
     st.session_state.salario_base_input = float(pack_datos.get("salario_base", 3200.0))
     st.session_state.efectivo_divisas = pack_datos.get("efectivo_divisas", {"EUR": 15450.0})
     st.session_state.cartera_usuario = pack_datos.get("cartera_usuario", {})
@@ -159,6 +154,7 @@ if btn_acceder or "ultima_clave" not in st.session_state:
     st.rerun()
 
 clave_usuario = st.session_state.ultima_clave
+db = st.session_state.db_data
 
 if "plusvalia_bolsa_real" not in st.session_state:
     st.session_state.plusvalia_bolsa_real = 0.0
@@ -175,7 +171,6 @@ tab_balance, tab_proyeccion, tab_fiscalidad = st.tabs([
     "📑 Tax Alpha e Impuestos"
 ])
 
-# Helper conversión divisas
 def obtener_conversion_eur(monto, divisa):
     if divisa == "EUR" or monto == 0:
         return monto
@@ -343,7 +338,6 @@ with tab_balance:
             st.rerun()
         
         if c_sav.button("💾 Guardar Datos en la Nube", type="secondary", use_container_width=True):
-            # Empaquetamos absolutamente toda la memoria de la sesión para salvarla en el JSON global
             paquete_completo = {
                 "salario_base": float(st.session_state.get("salario_base_input", 3200.0)),
                 "efectivo_divisas": st.session_state.efectivo_divisas,
@@ -535,16 +529,18 @@ with tab_proyeccion:
             inmo_extra = df_matrix_edited.loc[anio_label, "Inversión Inmobiliaria Nueva (€/año)"]
             
             intereses_generados_este_anio = v_cash * (interes_cash / 100)
-            ingresos_totales_anio = salario_recibido + rentas_recibidas + dividendos_recibidos + intereses_generados_este_anio
-            excedente_de_caja_anio = ingresos_totales_anio - gastos_soportados - bolsa_extra - inmo_extra
             
             factor_deflactor = (1 + (pct_inflacion / 100)) ** idx
             
+            # Almacenamos los flujos de caja reales deflactados para el Gráfico 2
             h_cf_ahorro_metalico.append(max(0.0, salario_recibido) / factor_deflactor)
             h_cf_dividendos.append(dividendos_recibidos / factor_deflactor)
             h_cf_rentas_inmo.append(max(0.0, rentas_recibidas) / factor_deflactor)
             h_cf_interes_acum.append(intereses_generados_este_anio / factor_deflactor)
             h_cf_gastos.append(gastos_soportados / factor_deflactor)
+            
+            ingresos_totales_anio = salario_recibido + rentas_recibidas + dividendos_recibidos + intereses_generados_este_anio
+            excedente_de_caja_anio = ingresos_totales_anio - gastos_soportados - bolsa_extra - inmo_extra
             
             v_cash += excedente_de_caja_anio
             v_bolsa += bolsa_extra
@@ -574,7 +570,7 @@ with tab_proyeccion:
         if mes_cruze != -1:
             st.success(f"💎 **Hito de Independencia Financiera Estimado:** Alcanzarás tu Número FI en el año **{hist_anios[mes_cruze]}** (dentro de {mes_cruze+1} años).")
         
-        # --- GRÁFICOS ---
+        # --- GRÁFICO 1: EVOLUCIÓN ESTRUCTURAL ---
         fig_sim = go.Figure()
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_cash, mode='lines', name='💼 Cash / Liquidez', stackgroup='one', line=dict(color='#60A5FA', width=0.5)))
         fig_sim.add_trace(go.Scatter(x=hist_anios, y=h_bolsa, mode='lines', name='📈 Cartera Bolsa', stackgroup='one', line=dict(color='#A78BFA', width=0.5)))
@@ -593,6 +589,30 @@ with tab_proyeccion:
             height=520
         )
         st.plotly_chart(fig_sim, use_container_width=True)
+
+        st.divider()
+
+        # =====================================================================
+        # --- CORREGIDO: RESTAURADO EL GRÁFICO 2 DE FLUJOS DE CAJA ---
+        # =====================================================================
+        fig_bar_cf = go.Figure()
+        fig_bar_cf.add_bar(x=hist_anios, y=h_cf_ahorro_metalico, name='🪙 Salario / Ingresos Activos', marker_color='#2563EB')
+        fig_bar_cf.add_bar(x=hist_anios, y=h_cf_rentas_inmo, name='🏠 Rentas Inmobiliarias Netas', marker_color='#10B981')
+        fig_bar_cf.add_bar(x=hist_anios, y=h_cf_dividendos, name='💸 Dividendos Bursátiles', marker_color='#8B5CF6')
+        fig_bar_cf.add_bar(x=hist_anios, y=h_cf_interes_acum, name='💰 Intereses del Cash Ganados', marker_color='#F59E0B')
+        fig_bar_cf.add_trace(go.Scatter(x=hist_anios, y=h_cf_gastos, mode='lines+markers', name='🔴 Gastos Anuales (Umbral de Vida)', line=dict(color='#EF4444', width=3)))
+
+        fig_bar_cf.update_layout(
+            barmode='stack',
+            template="plotly_dark",
+            title=dict(text="Análisis de Flujos de Caja Anuales Reales<br>(Ajustados a Inflación & Retorno Compuesto)", y=0.96, x=0.5, xanchor="center"),
+            margin=dict(t=110, b=160, l=40, r=40),
+            xaxis_title="Año",
+            yaxis_title="Flujo de Efectivo Real (€ / año)",
+            legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5),
+            height=520
+        )
+        st.plotly_chart(fig_bar_cf, use_container_width=True)
 
 # =====================================================================
 # PESTAÑA 3: TAX ALPHA E IMPUESTOS
