@@ -118,7 +118,7 @@ def guardar_datos_db(paquete_total, escenario):
         st.error(f"Error al sincronizar con la nube: {e}")
 
 # =====================================================================
-# --- PRIMERO: CREAR EL FORMULARIO LATERAL (EVITA EL NAMEERROR) ---
+# --- PRIMERO: CREAR EL FORMULARIO LATERAL (ESTABLECE CONTRASEÑA) ---
 # =====================================================================
 st.sidebar.header("🔑 Seguridad de Capas")
 
@@ -127,9 +127,10 @@ with st.sidebar.form("form_autenticacion"):
     btn_acceder = st.form_submit_button("🔓 Cargar / Forzar Datos", use_container_width=True)
 
 # =====================================================================
-# --- SEGUNDO: DISPARADOR DE CONTROL DE SESIÓN ---
+# --- SEGUNDO: DISPARADOR DE CONTROL DE SESIÓN CORREGIDO ---
 # =====================================================================
-if btn_acceder or "ultima_clave" not in st.session_state:
+# Forzamos la carga inicial si la clave no está en caché, o si explícitamente se pulsa el botón de actualización.
+if btn_acceder or "ultima_clave" not in st.session_state or "db_data" not in st.session_state:
     st.session_state.ultima_clave = clave_input
     pack_datos = cargar_datos_db(clave_input)
     
@@ -151,6 +152,7 @@ if btn_acceder or "ultima_clave" not in st.session_state:
             "gastos_vida_base": 1800.0
         }
     
+    # Asignación segura a variables del State
     st.session_state.salario_base_input = float(pack_datos.get("salario_base", 3200.0))
     st.session_state.efectivo_divisas = pack_datos.get("efectivo_divisas", {"EUR": 15450.0})
     st.session_state.cartera_usuario = pack_datos.get("cartera_usuario", {})
@@ -164,8 +166,12 @@ if btn_acceder or "ultima_clave" not in st.session_state:
     st.session_state.gastos_vida_base_input = float(pack_datos.get("gastos_vida_base", 1800.0))
     
     st.session_state.db_data = pack_datos
-    st.rerun()
+    
+    # Si la carga se inició por pulsar el botón, forzamos refresco gráfico para pintar la nueva clave
+    if btn_acceder:
+        st.rerun()
 
+# Lectura directa garantizada de variables globales de sesión
 clave_usuario = st.session_state.ultima_clave
 db = st.session_state.db_data
 
