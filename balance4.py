@@ -118,7 +118,7 @@ def guardar_datos_db(paquete_total, escenario):
         st.error(f"Error al sincronizar con la nube: {e}")
 
 # =====================================================================
-# --- PRIMERO: CREAR EL FORMULARIO LATERAL (ESTABLECE CONTRASEÑA) ---
+# --- PRIMERO: CREAR EL FORMULARIO LATERAL ---
 # =====================================================================
 st.sidebar.header("🔑 Seguridad de Capas")
 
@@ -127,9 +127,8 @@ with st.sidebar.form("form_autenticacion"):
     btn_acceder = st.form_submit_button("🔓 Cargar / Forzar Datos", use_container_width=True)
 
 # =====================================================================
-# --- SEGUNDO: DISPARADOR DE CONTROL DE SESIÓN CORREGIDO ---
+# --- SEGUNDO: DISPARADOR DE CONTROL DE SESIÓN ---
 # =====================================================================
-# Forzamos la carga inicial si la clave no está en caché, o si explícitamente se pulsa el botón de actualización.
 if btn_acceder or "ultima_clave" not in st.session_state or "db_data" not in st.session_state:
     st.session_state.ultima_clave = clave_input
     pack_datos = cargar_datos_db(clave_input)
@@ -152,26 +151,21 @@ if btn_acceder or "ultima_clave" not in st.session_state or "db_data" not in st.
             "gastos_vida_base": 1800.0
         }
     
-    # Asignación segura a variables del State
-    st.session_state.salario_base_input = float(pack_datos.get("salario_base", 3200.0))
+    # Asignaciones base iniciales seguras
     st.session_state.efectivo_divisas = pack_datos.get("efectivo_divisas", {"EUR": 15450.0})
     st.session_state.cartera_usuario = pack_datos.get("cartera_usuario", {})
     st.session_state.fincas_usuario = pack_datos.get("fincas_usuario", [])
     st.session_state.pensiones_usuario = pack_datos.get("pensiones_usuario", [])
     st.session_state.otros_activos_usuario = pack_datos.get("otros_activos_usuario", [])
     st.session_state.deudas_usuario = pack_datos.get("deudas_usuario", [])
-    
     st.session_state.analitica_inmuebles = pack_datos.get("analitica_inmuebles", {})
     st.session_state.planificacion_pensiones = pack_datos.get("planificacion_pensiones", {})
-    st.session_state.gastos_vida_base_input = float(pack_datos.get("gastos_vida_base", 1800.0))
     
     st.session_state.db_data = pack_datos
     
-    # Si la carga se inició por pulsar el botón, forzamos refresco gráfico para pintar la nueva clave
     if btn_acceder:
         st.rerun()
 
-# Lectura directa garantizada de variables globales de sesión
 clave_usuario = st.session_state.ultima_clave
 db = st.session_state.db_data
 
@@ -395,9 +389,6 @@ with tab_proyeccion:
         st.markdown("### 🏢 Módulo de Rendimiento Inmobiliario")
         total_rentas_pasivas_inmo = 0.0
         
-        if "analitica_inmuebles" not in st.session_state:
-            st.session_state.analitica_inmuebles = {}
-            
         if not st.session_state.fincas_usuario:
             st.caption("⚠️ No hay inmuebles en la Pestaña 1.")
         else:
@@ -435,9 +426,6 @@ with tab_proyeccion:
         total_aportacion_mensual_pensiones = 0.0
         total_anual_deducible_pensiones_usuario = 0.0
         
-        if "planificacion_pensiones" not in st.session_state:
-            st.session_state.planificacion_pensiones = {}
-            
         if st.session_state.pensiones_usuario:
             for p in st.session_state.pensiones_usuario:
                 nombre_plan = p['Nombre']
@@ -457,11 +445,9 @@ with tab_proyeccion:
                     total_anual_deducible_pensiones_usuario += (aport_user * 12)
 
         st.subheader("🟢 Otros Ingresos & Gastos Base")
-        salario_neto_base = st.number_input("Salario Neto Base Mensual (€)", min_value=0.0, value=float(st.session_state.get("salario_base_input", 3200.0)), key="salario_base_input_main", step=100.0)
-        st.session_state.salario_base_input = salario_neto_base
-        
+        # DATA BINDING AUTOMÁTICO: Quitamos la asignación manual conflictiva abajo
+        salario_neto_base = st.number_input("Salario Neto Base Mensual (€)", min_value=0.0, value=float(st.session_state.get("salario_base_input", 3200.0)), key="salario_base_input", step=100.0)
         gastos_vida_base = st.number_input("Gastos de Vida Base Mensuales (€)", min_value=0.0, value=float(st.session_state.get("gastos_vida_base_input", 1800.0)), key="gastos_vida_base_input", step=100.0)
-        st.session_state.gastos_vida_base_input = gastos_vida_base
         
         st.divider()
         ahorro_mensual_inicial = (salario_neto_base + total_rentas_pasivas_inmo + total_dividendos_mensuales_bolsa) - gastos_vida_base
@@ -517,7 +503,7 @@ with tab_proyeccion:
             anios_index = [f"Año {i}" for i in range(1, años_sim + 1)]
             data_matrix = {
                 "Salario Neto Anual (€)": [int(salario_neto_base * 12)] * años_sim,
-                "Rentas Inmo Anuales (€)": [int(total_rentas_pasivas_inmo * 12)] * años_sim,
+                "Rentas Anmo Anuales (€)": [int(total_rentas_pasivas_inmo * 12)] * años_sim,
                 "Dividendos Anuales (€)": [int(total_dividendos_mensuales_bolsa * 12)] * años_sim,
                 "Gastos Anuales Totales (€)": [int(gastos_vida_base * 12)] * años_sim,
                 "Aportación Bolsa Extra (€/año)": [0] * años_sim,
@@ -540,7 +526,7 @@ with tab_proyeccion:
 
         for idx, anio_label in enumerate(anios_index):
             salario_recibido = df_matrix_edited.loc[anio_label, "Salario Neto Anual (€)"]
-            rentas_recibidas = df_matrix_edited.loc[anio_label, "Rentas Inmo Anuales (€)"]
+            rentas_recibidas = df_matrix_edited.loc[anio_label, "Rentas Anmo Anuales (€)"]
             dividendos_recibidos = df_matrix_edited.loc[anio_label, "Dividendos Anuales (€)"]
             gastos_soportados = df_matrix_edited.loc[anio_label, "Gastos Anuales Totales (€)"]
             
